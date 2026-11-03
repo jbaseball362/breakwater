@@ -1,0 +1,17 @@
+{
+  "name": "Breakwater",
+  "short_name": "Breakwater",
+  "description": "Hold the causeway against the red tide. Fifty levels. No ads, no energy, nothing to buy.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#0b4a5c",
+  "theme_color": "#0b6f8a",
+  "categories": ["games"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
