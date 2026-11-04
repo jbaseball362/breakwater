@@ -129,6 +129,25 @@ export function crabMaterial(timeUniform) {
   return material;
 }
 
+// A weighted rope net, one unit across, domed a little at the center.
+export function netGeometry() {
+  const rope = 0xf0e2b0;
+  const parts = [];
+  for (const [radius, y] of [[1, 0], [0.68, 0.13], [0.36, 0.22]]) {
+    const ring = new THREE.TorusGeometry(radius, 0.05, 4, 18).rotateX(Math.PI / 2);
+    ring.translate(0, y, 0);
+    parts.push({ geo: ring, color: rope });
+  }
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const x = Math.sin(a);
+    const z = Math.cos(a);
+    parts.push({ geo: limb([0, 0.27, 0], [x, 0, z], 0.045, 0.045, 4), color: rope });
+    parts.push({ geo: blob(0.1, 1, 1, 1, x, -0.02, z), color: 0x4a4032 });
+  }
+  return merge(parts);
+}
+
 export function buildHero() {
   const root = new THREE.Group();
   const coat = lambert(0xf6c21c);

@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { CRABS, SPECIALS, TOWERS, WORLD } from '../content.js';
 import { applyPalette, buildWorld } from './world.js';
-import { buildHero, buildHydrant, buildTower, crabGeometry, crabMaterial, lambert, ringMesh } from './models.js';
+import { buildHero, buildHydrant, buildTower, crabGeometry, crabMaterial, lambert, netGeometry, ringMesh } from './models.js';
 
 const CRAB_CAPACITY = { scuttler: 1400, runner: 600, hermit: 240, brood: 120, king: 6, medic: 150, molter: 500, flea: 900, bull: 150, jammer: 150 };
 const CRAB_SHAPES = {
@@ -308,6 +308,18 @@ export class View {
       return { mesh, life: 0, len: 1, r: 0.07 };
     });
 
+    const netGeo = netGeometry();
+    const netMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    const makeNet = () => {
+      const mesh = new THREE.Mesh(netGeo, netMat);
+      mesh.visible = false;
+      mesh.castShadow = true;
+      this.scene.add(mesh);
+      return mesh;
+    };
+    this.flyingNets = Array.from({ length: 10 }, makeNet);
+    this.drapedNets = Array.from({ length: 14 }, () => ({ mesh: makeNet(), life: 0, radius: 1 }));
+
     this.beamGeo = new THREE.CylinderGeometry(1, 1, 1, 8).rotateX(Math.PI / 2);
     this.beamOuter = new THREE.MeshBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.4, depthWrite: false });
     this.beamInner = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false });
@@ -360,7 +372,7 @@ export class View {
     this.floaters.length = 0;
     this.tips.length = 0;
     for (const ring of this.rings) { ring.life = 0; ring.mesh.visible = false; }
-    for (const s of [...this.streaks, ...this.arcs]) { s.life = 0; s.mesh.visible = false; }
+    for (const s of [...this.streaks, ...this.arcs, ...this.drapedNets]) { s.life = 0; s.mesh.visible = false; }
     this.shake = 0;
   }
 
@@ -698,10 +710,23 @@ export class View {
           play('shot');
           break;
         }
-        case 'net': {
-          this.spawnRing(e.x, e.z, e.radius + 0.4, 0xcbb56a, 0.5);
-          this.particles.burst(e.x, 0.8, e.z, 14, { color: 0xcbb56a, speed: 2.6, up: 3, size: 0.1, life: 0.4, spread: e.radius });
+        case 'netFire':
           play('thunk', { high: true });
+          break;
+        case 'net': {
+          // The net stays on the crabs for as long as they're held.
+          const net = this.drapedNets.find((n) => n.life <= 0);
+          if (net) {
+            net.life = e.hold;
+            net.radius = Math.max(e.radius, e.size * 0.85);
+            net.mesh.position.set(e.x, Math.max(0.75, e.size * 0.72), e.z);
+            net.mesh.rotation.y = Math.random() * Math.PI;
+            net.mesh.scale.setScalar(net.radius);
+            net.mesh.visible = true;
+          }
+          this.spawnRing(e.x, e.z, e.radius + 0.4, 0xf0e2b0, 0.45);
+          this.particles.burst(e.x, 0.8, e.z, 14 + e.level * 4, { color: 0xf0e2b0, speed: 2.6, up: 3, size: 0.1, life: 0.4, spread: e.radius });
+          play('crunch');
           break;
         }
         case 'pump':
@@ -998,6 +1023,23 @@ export class View {
     this.tracers.count = n;
     this.tracers.instanceMatrix.needsUpdate = true;
     this.tracers.instanceColor.needsUpdate = true;
+
+    this.flyingNets.forEach((mesh, i) => {
+      const net = game.nets[i];
+      mesh.visible = !!net;
+      if (!net) return;
+      // Bundled up as it leaves the launcher, opening out to full size as it comes down.
+      const u = Math.min(1, net.t / net.T);
+      mesh.position.set(net.x0 + (net.x - net.x0) * u, 1.3 + (0.8 - 1.3) * u + 4 * 2.4 * u * (1 - u), net.z0 + (net.z - net.z0) * u);
+      mesh.rotation.y = u * 8;
+      mesh.scale.setScalar(net.st.radius * (0.3 + 0.7 * u));
+    });
+    for (const net of this.drapedNets) {
+      if (net.life <= 0) continue;
+      net.life -= dt;
+      if (net.life <= 0) { net.mesh.visible = false; continue; }
+      net.mesh.scale.setScalar(net.radius * Math.min(1, 0.3 + net.life / 0.25));
+    }
 
     this.shellPool.forEach((mesh, i) => {
       const s = game.shells[i];

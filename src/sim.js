@@ -9,6 +9,7 @@ const PANEL_GAP = 1.2;
 const LANE_SAMPLE = 0.5;
 const SHOT_SPEED = 36;
 const SHELL_TIME = 0.85;
+const NET_FLIGHT = 0.4;
 
 function makeRng(seed) {
   let s = (seed >>> 0) || 1;
@@ -156,6 +157,7 @@ export function createGame(def, seed = 1) {
     crabs: [],
     shots: [],
     shells: [],
+    nets: [],
     pending: [],
     events: [],
     choosing: false,
@@ -203,6 +205,7 @@ function spawnCrab(game, type, lane, t, lat, group) {
     speedMul: 1,
     molted: false,
     netT: 0,
+    netIncoming: false,
     healT: game.rand() * (def.heal?.every ?? 1),
     pending: 0, slow: 0, flash: 0, frost: 0,
     phase: game.rand() * Math.PI * 2,
@@ -509,7 +512,7 @@ function toughestCrab(game, x, z, range, skipNetted = false) {
   let best = null;
   const r2 = range * range;
   for (const c of game.crabs) {
-    if (c.dead || c.t < 0 || (skipNetted && c.netT > 0)) continue;
+    if (c.dead || c.t < 0 || (skipNetted && (c.netT > 0 || c.netIncoming))) continue;
     const dx = c.x - x;
     const dz = c.z - z;
     if (dx * dx + dz * dz <= r2 && (!best || c.hp > best.hp)) best = c;
@@ -521,11 +524,21 @@ function fireNet(game, p, st) {
   const target = toughestCrab(game, p.x, p.z, st.range, true);
   if (!target) return false;
   p.aim = Math.atan2(target.x - p.x, target.z - p.z);
+  // Marked so a second launcher doesn't waste a net on a crab that's about to be caught.
+  target.netIncoming = true;
+  game.nets.push({ x0: p.x, z0: p.z, target, x: target.x, z: target.z, t: 0, T: NET_FLIGHT, st, level: p.level });
+  game.events.push({ t: 'netFire', pad: p });
+  return true;
+}
+
+function landNet(game, net) {
+  const { st, target } = net;
+  target.netIncoming = false;
   const hits = [];
   for (const c of game.crabs) {
     if (c.dead || c.t < 0) continue;
-    const dx = c.x - target.x;
-    const dz = c.z - target.z;
+    const dx = c.x - net.x;
+    const dz = c.z - net.z;
     const r = st.radius + c.def.size * 0.3;
     const d = dx * dx + dz * dz;
     if (d < r * r) {
@@ -536,8 +549,7 @@ function fireNet(game, p, st) {
   for (const c of closestHits(hits, st.maxHits)) {
     c.netT = Math.max(c.netT, st.hold * (c.def.bar ? st.bossHold : 1));
   }
-  game.events.push({ t: 'net', x: target.x, z: target.z, radius: st.radius, pad: p });
-  return true;
+  game.events.push({ t: 'net', x: net.x, z: net.z, radius: st.radius, hold: st.hold * (target.def.bar ? st.bossHold : 1), size: target.def.size, level: net.level });
 }
 
 function fireChain(game, p, st, first) {
@@ -744,6 +756,22 @@ function healAround(game, medic, dt) {
   game.events.push({ t: 'heal', x: medic.x, z: medic.z, radius });
 }
 
+function updateNets(game, dt) {
+  for (let i = game.nets.length - 1; i >= 0; i--) {
+    const net = game.nets[i];
+    net.t += dt;
+    // A net follows its crab through the air, and lands where it last was if the crab dies first.
+    if (!net.target.dead) {
+      net.x = net.target.x;
+      net.z = net.target.z;
+    }
+    if (net.t < net.T) continue;
+    landNet(game, net);
+    game.nets[i] = game.nets[game.nets.length - 1];
+    game.nets.pop();
+  }
+}
+
 function updateCrabs(game, dt) {
   const chill = game.fx.chill > 0 ? SPECIALS.chill.factor : 1;
   for (const c of game.crabs) {
@@ -808,6 +836,7 @@ export function stepGame(game, input) {
   updateHero(game, input, dt);
   updateTowers(game, dt);
   updateProjectiles(game, dt);
+  updateNets(game, dt);
   updateCrabs(game, dt);
   removeDead(game);
 
