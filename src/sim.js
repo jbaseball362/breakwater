@@ -158,6 +158,7 @@ export function createGame(def, seed = 1) {
     shells: [],
     pending: [],
     events: [],
+    choosing: false,
     waveIndex: 0,
     waveT: def.waves[0].gap,
     fx: { chill: 0, surge: 0 },
@@ -778,8 +779,17 @@ function removeDead(game) {
   game.stats.peak = Math.max(game.stats.peak, crabs.length);
 }
 
+// Standing still on an empty pad stops the clock until you pick a tower or walk away, so making a
+// decision never costs you crabs at the gate. Running across a pad doesn't count.
+function waitingForChoice(game, input) {
+  const moving = Math.hypot(input?.mx ?? 0, input?.mz ?? 0) > 0.05;
+  return !moving && game.pads.some((p) => p.active && !p.type);
+}
+
 export function stepGame(game, input) {
   if (game.phase !== 'playing') return;
+  game.choosing = waitingForChoice(game, input);
+  if (game.choosing) return;
   const dt = STEP;
   game.time += dt;
   game.fx.chill = Math.max(0, game.fx.chill - dt);

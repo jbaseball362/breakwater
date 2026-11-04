@@ -291,6 +291,7 @@ function statsBlock(pad) {
 function choiceCards(pad) {
   const box = $('pad-panel');
   box.textContent = '';
+  if (game.choosing) box.append(make('p', 'pad-prompt', 'Paused. Pick a tower, or walk away to keep playing.'));
   const benchTaken = game.pads.some((p) => p !== pad && p.type === 'bench');
   for (const type of game.offer) {
     if (type === 'bench' && benchTaken) continue;
@@ -318,7 +319,7 @@ function updatePadPanel() {
   }
   const choosing = pad.level === 0 && game.offer.length > 1;
   const canAfford = choosing ? game.offer.map((type) => game.parts >= TOWERS[type].costs[0]).join() : '';
-  const signature = [game.pads.indexOf(pad), pad.type, pad.level, pad.armed, canAfford].join('|');
+  const signature = [game.pads.indexOf(pad), pad.type, pad.level, pad.armed, game.choosing, canAfford].join('|');
   if (signature === panelSignature) return;
   panelSignature = signature;
   if (pad.type) {
@@ -560,7 +561,8 @@ function tick(real) {
   }
   drainEvents();
 
-  view.update(game, mode === 'paused' ? 0 : Math.max(simDt, real * 0.0001));
+  // Everything on screen holds still during a pause, so it's clear that nothing is happening.
+  view.update(game, mode === 'paused' || game.choosing ? 0 : Math.max(simDt, real * 0.0001));
   view.render();
 
   const inPlay = mode === 'playing' || mode === 'paused' || mode === 'ended';

@@ -264,6 +264,18 @@ button:focus-visible { outline: 3px solid var(--foam); outline-offset: 2px; }
   gap: 6px;
   pointer-events: none;
 }
+.pad-prompt {
+  grid-column: 1 / -1;
+  justify-self: center;
+  margin: 0;
+  padding: 3px 12px;
+  background: rgba(27, 42, 49, 0.94);
+  border-radius: 3px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1.2;
+}
 .tower-card {
   pointer-events: auto;
   position: relative;
@@ -441,6 +453,29 @@ button:focus-visible { outline: 3px solid var(--foam); outline-offset: 2px; }
   .title-screen { padding-top: 16px; }
   .banner, .pad-stats { top: 96px; }
   .hud-status { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); width: min(40%, 300px); margin-top: 54px; }
+}
+
+/* Wide screens have open sea on both sides of the yard, so nothing has to cover it. */
+@media (min-aspect-ratio: 5/4) {
+  .pad-panel {
+    left: auto;
+    right: 16px;
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+    width: min(23vw, 300px);
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pad-stats {
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: min(23vw, 320px);
+  }
+}
+
+@media (min-aspect-ratio: 5/4) and (max-height: 520px) {
+  .pad-panel { width: min(30vw, 340px); grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

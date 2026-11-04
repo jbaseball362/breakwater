@@ -41,7 +41,7 @@ Drag anywhere to walk, or use WASD or the arrow keys. Your blaster and towers fi
 
 1. Number plates ride the belts and drop down the pipes into the hydrants.
 2. Step into a hydrant's ring to open its valve and collect the parts. A full hydrant stops its belt.
-3. Stand on an empty pad and tap the tower you want, or press 1 to 6 on a keyboard. Your parts pay for it. Tap a different tower before it's finished and you get your parts back.
+3. Stop on an empty pad and the game pauses until you tap the tower you want, or press 1 to 6 on a keyboard. Walk away to resume without picking. Your parts pay for the tower. Tap a different one before it's finished and you get your parts back.
 4. Stand on a finished tower to see what its next level adds. Step off and back on to buy it.
 5. Stop the crabs before they reach the pump house. Walking through crabs slows you down.
 
