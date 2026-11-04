@@ -141,6 +141,28 @@ button:focus-visible { outline: 3px solid var(--foam); outline-offset: 2px; }
   gap: 5px;
 }
 
+.level-tag {
+  width: 100%;
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 1px 8px;
+  background: rgba(16, 28, 34, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+}
+.level-tag-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.level-tag-name b { font-weight: 800; }
+.level-tag-best { flex: none; display: inline-flex; align-items: center; gap: 5px; }
+.level-tag .bolts { margin: 0; gap: 3px; }
+.level-tag .bolt { background: rgba(255, 255, 255, 0.28); }
+.level-tag .bolt.on { background: var(--safety); }
+
 .gauge {
   position: relative;
   width: 100%;
@@ -218,7 +240,7 @@ button:focus-visible { outline: 3px solid var(--foam); outline-offset: 2px; }
   line-height: 1.2;
 }
 .banner {
-  top: 142px;
+  top: 170px;
   background: var(--ink);
   color: var(--foam);
   border-left: 5px solid var(--safety);
@@ -236,7 +258,7 @@ button:focus-visible { outline: 3px solid var(--foam); outline-offset: 2px; }
    still works underneath it, and only the buttons catch them. */
 .pad-stats {
   position: absolute;
-  top: 142px;
+  top: 170px;
   left: 50%;
   transform: translateX(-50%);
   width: min(calc(100% - 24px), 340px);
@@ -462,7 +484,7 @@ button:focus-visible { outline: 3px solid var(--foam); outline-offset: 2px; }
 @media (max-height: 500px) {
   .title { font-size: 58px; }
   .title-screen { padding-top: 16px; }
-  .banner, .pad-stats { top: 96px; }
+  .banner, .pad-stats { top: 152px; }
   .hud-status { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); width: min(40%, 300px); margin-top: 54px; }
 }
 

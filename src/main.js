@@ -350,6 +350,15 @@ function showBanner(text, seconds = 3, alert = false) {
   bannerT = seconds;
 }
 
+// Bolts here are the player's best for this level so far, not how the current run is going.
+function showLevelTag() {
+  const best = save.stars[level.id] ?? 0;
+  $('level-num').textContent = `Level ${level.id}`;
+  $('level-name').textContent = level.name;
+  $('level-bolts').innerHTML = boltsHtml(best);
+  $('level-tag').setAttribute('aria-label', `Level ${level.id}, ${level.name}. Best so far: ${best} of 3 bolts`);
+}
+
 function startLevel(l) {
   level = l;
   game = createGame(l);
@@ -367,6 +376,7 @@ function startLevel(l) {
   $('pad-panel').hidden = true;
   $('pad-stats').hidden = true;
   panelSignature = null;
+  showLevelTag();
   showScreen(null);
   if (l.intro) showBanner(l.intro, 7);
   audio.unlock();
@@ -431,6 +441,7 @@ function showResult() {
   if (won && stars > (save.stars[level.id] ?? 0)) {
     save.stars[level.id] = stars;
     writeSave();
+    showLevelTag();
   }
   $('result-title').textContent = won ? 'Causeway held' : 'Pump house flooded';
   $('result-bolts').innerHTML = won ? boltsHtml(stars) : '';
