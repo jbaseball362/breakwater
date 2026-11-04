@@ -505,6 +505,30 @@ function bindUi() {
   });
 }
 
+function showGraphicsProblem(message) {
+  $('fatal-text').textContent = message;
+  $('fatal').hidden = false;
+}
+
+function webglAvailable() {
+  try {
+    return !!document.createElement('canvas').getContext('webgl2');
+  } catch {
+    return false;
+  }
+}
+
+// A driver crash or graphics card reset can take 3D away while the game is running.
+function watchForGraphicsResets(canvas) {
+  canvas.addEventListener('webglcontextlost', () => {
+    if (mode === 'playing') togglePause();
+    showGraphicsProblem('Your graphics card reset, so the game has paused until it comes back. If this message stays, reload the game. Reloading restarts the level you are on and keeps your bolts.');
+  });
+  canvas.addEventListener('webglcontextrestored', () => {
+    $('fatal').hidden = true;
+  });
+}
+
 function setUpOffline() {
   // Browsers only allow a service worker on HTTPS or localhost. Anywhere else the game still
   // plays, it just needs the connection each time.
@@ -529,6 +553,8 @@ addEventListener('appinstalled', () => {
 });
 
 async function boot() {
+  $('btn-fatal-reload').addEventListener('click', () => location.reload());
+
   // Plates are drawn to canvases, so their font has to be ready before the first one.
   try {
     await Promise.race([
@@ -542,11 +568,12 @@ async function boot() {
   try {
     view = new View($('world'));
   } catch (err) {
-    const fatal = $('fatal');
-    fatal.textContent = 'This browser could not start WebGL, which the game needs to draw the causeway. Turn on hardware acceleration or try another browser.';
-    fatal.hidden = false;
+    showGraphicsProblem(webglAvailable()
+      ? `The game hit an error while starting: ${err.message}`
+      : "This browser isn't providing 3D graphics, which the game needs. Check that graphics or hardware acceleration is on in the browser's settings, then quit the browser completely and reopen it.");
     throw err;
   }
+  watchForGraphicsResets($('world'));
   overlay = new Overlay($('overlay'), view);
   view.onSound = (name, opts) => audio.play(name, opts);
 

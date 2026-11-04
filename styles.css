@@ -363,12 +363,16 @@ button:focus-visible { outline: 3px solid var(--foam); outline-offset: 2px; }
   inset: 0;
   z-index: 9;
   display: grid;
-  place-items: center;
+  place-content: center;
+  justify-items: center;
+  gap: 20px;
   padding: 26px;
   text-align: center;
   background: var(--sea);
   font-size: 21px;
 }
+.fatal p { margin: 0; max-width: 34em; }
+.fatal .btn { width: auto; }
 
 @media (max-height: 500px) {
   .title { font-size: 58px; }
