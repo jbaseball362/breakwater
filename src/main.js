@@ -401,6 +401,20 @@ function endTip(g) {
   return 'Every pad was built. Upgrade the towers nearest the gate first.';
 }
 
+const plurals = (types) => types.map((type) => `${TOWERS[type].name}s`).join(' or ');
+
+// Advice for one crab, using only towers this level offers. Null if none of them counters it.
+function counterTip(type) {
+  const counters = CRABS[type].counters.filter((tower) => game.def.offer.includes(tower)).slice(0, 2);
+  if (!counters.length) return null;
+  const built = game.pads.filter((p) => p.level > 0).map((p) => p.type);
+  const have = counters.filter((tower) => built.includes(tower));
+  const missing = counters.filter((tower) => !built.includes(tower));
+  if (!have.length) return `Try ${plurals(missing)}.`;
+  if (!missing.length) return `Build more ${plurals(have)}, or upgrade them sooner.`;
+  return `Try ${plurals(missing)}, or more ${plurals(have)}.`;
+}
+
 // What reached the pump house, worst first, so you know what to build for next time.
 function renderDamageReport() {
   const box = $('result-damage');
@@ -430,6 +444,15 @@ function renderDamageReport() {
   const [worstWave, worstDamage] = Object.entries(waveDamage).sort((a, b) => b[1] - a[1])[0];
   note(`Worst wave: ${worstWave} of ${game.def.waves.length}`, `\u2212${worstDamage}`);
   if (repaired > 0) note('Repaired by Patch plates', `+${repaired}`);
+
+  const tips = hits.slice(0, 2).map(([type]) => [type, counterTip(type)]).filter(([, tip]) => tip);
+  if (!tips.length) return;
+  box.append(make('h3', 'damage-tips-title', 'Next time'));
+  for (const [type, tip] of tips) {
+    const line = make('p', 'damage-tip');
+    line.append(make('b', '', `${CRABS[type].name}: `), tip);
+    box.append(line);
+  }
 }
 
 function showResult() {

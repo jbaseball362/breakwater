@@ -144,7 +144,7 @@ const BLUEPRINTS = [
   lv('Tight squeeze', 'narrow', 'MSSFMP', 's s+r h s r+s s+h', { intro: 'A narrow lane. Quicker to cross, and the crabs pack in tighter.' }),
   lv('Small tanks', 'straight', 'SMSFSM', 'r s s+r h s+h s', { tanks: 'small', intro: 'These hydrants fill fast. Empty them often or the belts stop.' }),
   lv('Jackpot', 'straight', 'MSPMFS', 's s+r h s+h r s+h', { belts: 'jackpot', intro: 'Almost everything is on the right belt. Build on the far side when you can afford the walk.' }),
-  lv('Sand fleas', 'straight', 'EEMFSEPB', 'f s f+s h f+r s+h f+s', { belts: 'trickle', intro: 'Sand fleas are tiny and spread out, so shells waste themselves on them. The Eel coil\'s lightning jumps from crab to crab.' }),
+  lv('Sand fleas', 'straight', 'EEMFSEPB', 'f s f+s h f+r s+h f+s', { belts: 'trickle', intro: 'Sand fleas are tiny and come in huge numbers. Towers that hit a whole crowd do best.' }),
   lv('Morning rush', 'straight', 'MMFSEPSB', 'r s f+r s r+h s f+r', { tempo: 0.75, plates: 'chill boom chill', intro: 'Colored plates are power-ups. They fire when you open the valve they landed in, so pick your moment.' }),
   lv('Shift change', 'narrow', 'MSPFMESB', 's+r h f+r h+s r s+h f+s h+s'),
 

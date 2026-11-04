@@ -30,22 +30,24 @@ export const HERO = {
 };
 
 // armor is the share of damage that gets through. Harpoons ignore it.
+// counters: the towers that help most against this crab, best first, as measured by
+// `npm run towers -- counters`. The results screen suggests the first two a level offers.
 export const CRABS = {
-  scuttler: { name: 'Scuttler', hp: 3, speed: 2.2, leak: 1, size: 0.8, armor: 1, slowResist: 1, color: 0xe0262b },
-  runner: { name: 'Runner', hp: 2.5, speed: 4.6, leak: 1, size: 0.7, armor: 1, slowResist: 1, color: 0xff7a2e },
-  hermit: { name: 'Hermit', hp: 20, speed: 1.6, leak: 2, size: 1.15, armor: 0.45, slowResist: 1, color: 0xa81628 },
-  brood: { name: 'Brood', hp: 40, speed: 1.4, leak: 3, size: 1.6, armor: 1, slowResist: 1, color: 0xd11c66, spawn: { type: 'scuttler', count: 7 } },
-  king: { name: 'King', hp: 1200, speed: 0.8, leak: 20, size: 4.2, armor: 0.7, slowResist: 0.4, color: 0x7d0d1c, bar: true },
+  scuttler: { name: 'Scuttler', hp: 3, speed: 2.2, leak: 1, size: 0.8, armor: 1, slowResist: 1, color: 0xe0262b, counters: ['mortar', 'foam', 'hose', 'eel'] },
+  runner: { name: 'Runner', hp: 2.5, speed: 4.6, leak: 1, size: 0.7, armor: 1, slowResist: 1, color: 0xff7a2e, counters: ['foam', 'hose', 'mortar'] },
+  hermit: { name: 'Hermit', hp: 20, speed: 1.6, leak: 2, size: 1.15, armor: 0.45, slowResist: 1, color: 0xa81628, counters: ['harpoon', 'eel', 'mortar'] },
+  brood: { name: 'Brood', hp: 40, speed: 1.4, leak: 3, size: 1.6, armor: 1, slowResist: 1, color: 0xd11c66, spawn: { type: 'scuttler', count: 7 }, counters: ['harpoon', 'eel'] },
+  king: { name: 'King', hp: 1200, speed: 0.8, leak: 20, size: 4.2, armor: 0.7, slowResist: 0.4, color: 0x7d0d1c, bar: true, counters: ['net', 'harpoon'] },
   // Heals everything around it, so it's worth picking out of a crowd.
-  medic: { name: 'Medic', hp: 14, speed: 1.7, leak: 2, size: 1, armor: 1, slowResist: 1, color: 0x19b8a6, heal: { every: 1.2, radius: 3.4, share: 0.08 } },
+  medic: { name: 'Medic', hp: 14, speed: 1.7, leak: 2, size: 1, armor: 1, slowResist: 1, color: 0x19b8a6, heal: { every: 1.2, radius: 3.4, share: 0.08 }, counters: ['harpoon', 'mortar'] },
   // Sheds its shell at half health and bolts for the gate.
-  molter: { name: 'Molter', hp: 12, speed: 1.8, leak: 1, size: 0.9, armor: 1, slowResist: 1, color: 0x8a3fd1, molt: { at: 0.5, speed: 2.3 } },
-  // Tiny and thinly spread, so shells waste themselves on it. Lightning jumps through it.
-  flea: { name: 'Flea', hp: 1.2, speed: 3.6, leak: 1, size: 0.5, armor: 1, slowResist: 1, color: 0xffb347 },
+  molter: { name: 'Molter', hp: 12, speed: 1.8, leak: 1, size: 0.9, armor: 1, slowResist: 1, color: 0x8a3fd1, molt: { at: 0.5, speed: 2.3 }, counters: ['mortar', 'eel', 'foam', 'harpoon'] },
+  // Tiny and quick, and it comes in huge numbers. Towers that cover an area do best.
+  flea: { name: 'Flea', hp: 1.2, speed: 3.6, leak: 1, size: 0.5, armor: 1, slowResist: 1, color: 0xffb347, counters: ['hose', 'foam', 'mortar', 'eel'] },
   // Fast and heavy, and foam barely slows it. A net stops it dead.
-  bull: { name: 'Bull', hp: 70, speed: 2.6, leak: 4, size: 1.5, armor: 0.5, slowResist: 0.15, color: 0x6b3320 },
+  bull: { name: 'Bull', hp: 70, speed: 2.6, leak: 4, size: 1.5, armor: 0.5, slowResist: 0.15, color: 0x6b3320, counters: ['harpoon', 'net'] },
   // Slows every tower near it, so it's worth killing from long range.
-  jammer: { name: 'Jammer', hp: 16, speed: 1.7, leak: 2, size: 1, armor: 1, slowResist: 1, color: 0xc9c02e, jam: { radius: 4.5, factor: 0.6 } },
+  jammer: { name: 'Jammer', hp: 16, speed: 1.7, leak: 2, size: 1, armor: 1, slowResist: 1, color: 0xc9c02e, jam: { radius: 4.5, factor: 0.6 }, counters: ['foam', 'mortar', 'harpoon', 'eel'] },
 };
 
 // costs[i] buys level i + 1. A pad's first cost builds it.
@@ -103,7 +105,7 @@ export const TOWERS = {
   },
   eel: {
     name: 'Eel coil', kind: 'chain', color: 0x3f6fe0,
-    blurb: 'Lightning that jumps from crab to crab', role: 'Crowds and fleas',
+    blurb: 'Lightning that jumps from crab to crab', role: 'Chain lightning',
     costs: [110, 150, 240],
     levels: [
       { range: 8, rate: 0.8, dmg: 3, jumps: 4, reach: 3 },

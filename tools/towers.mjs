@@ -5,6 +5,9 @@
 // Support: two pads of a mixed team swapped for a support tower. Compare each number with "base".
 // Crab danger: how much harder a wave budget spent on this crab is than scuttlers, with a mixed team.
 // Above 1 means raise that crab's number in DANGER in src/levels.js, and below 1 means lower it.
+// Counters: three of a Spitter team's pads swapped for each tower, against waves of one crab. Above 1
+// means the swap helps. `counters` in CRABS (src/content.js) should list the best towers in each row.
+// `npm run towers -- counters` prints only this table.
 
 import { availableParallelism } from 'node:os';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
@@ -29,11 +32,29 @@ const WAVES = {
   kings: 's+r h+s b+s k+s s+r h+s k+s',
 };
 
-function strongestSurvivable(towers, waves) {
+// One crab at a time. Mixing in a crowd measures the crowd instead: Kings with Scuttlers made Harpoons
+// and Nets look bad, when they're the best answer to a King alone.
+const CRAB_WAVES = {
+  scuttler: 's s s s s s s',
+  runner: 'r r r r r r r',
+  hermit: 'h h h h h h h',
+  brood: 'b b b b b b b',
+  medic: 'm m m m m m m',
+  molter: 'o o o o o o o',
+  flea: 'f f f f f f f',
+  bull: 'x x x x x x x',
+  jammer: 'j j j j j j j',
+  king: 'k k k k',
+};
+const COUNTER_TOWERS = ['spitter', 'mortar', 'hose', 'harpoon', 'eel', 'net', 'foam'];
+
+// A loadout plays a level built for other towers, the way a player's picks do, so a pricey tower
+// doesn't also get a bigger budget.
+function strongestSurvivable(towers, waves, loadout) {
   const survives = (threat) => {
     const def = buildLevel({ name: 'test', layout: 'straight', towers, waves }, LEVEL, threat);
     return ['buildAllFirst', 'cheapest'].some((order) => (
-      hpShare(playStyle(def, { think: 0.1, walk: 1, minTank: 12, order }, 1)) >= 0.5
+      hpShare(playStyle(def, { think: 0.1, walk: 1, minTank: 12, order, loadout }, 1)) >= 0.5
     ));
   };
   let lo = 0.05;
@@ -64,6 +85,17 @@ function buildJobs() {
   return jobs;
 }
 
+function counterJobs() {
+  const jobs = [];
+  for (const [row, waves] of Object.entries(CRAB_WAVES)) {
+    for (const col of COUNTER_TOWERS) {
+      const loadout = [col, col, col, 'spitter', 'spitter', 'spitter', 'spitter', 'bench'];
+      jobs.push({ table: 'counters', row, col, towers: MIXED_TEAM, waves, loadout });
+    }
+  }
+  return jobs;
+}
+
 function printTable(title, results, table) {
   const rows = results.filter((r) => r.table === table);
   const cols = [...new Set(rows.map((r) => r.col))];
@@ -76,7 +108,8 @@ function printTable(title, results, table) {
 }
 
 async function main() {
-  const jobs = buildJobs();
+  const countersOnly = process.argv[2] === 'counters';
+  const jobs = countersOnly ? counterJobs() : [...buildJobs(), ...counterJobs()];
   const results = [];
   let next = 0;
   await Promise.all(Array.from({ length: Math.max(1, availableParallelism() - 1) }, async () => {
@@ -90,16 +123,23 @@ async function main() {
     }
   }));
 
-  printTable('Fighters', results, 'fighters');
-  printTable('Support', results, 'support');
-  const crabs = results.filter((r) => r.table === 'crabs');
-  const base = crabs.find((r) => r.col === 'scuttler').value;
-  for (const r of crabs) r.value = base / r.value;
-  printTable('Crab danger', crabs, 'crabs');
+  if (!countersOnly) {
+    printTable('Fighters', results, 'fighters');
+    printTable('Support', results, 'support');
+    const crabs = results.filter((r) => r.table === 'crabs');
+    const base = crabs.find((r) => r.col === 'scuttler').value;
+    for (const r of crabs) r.value = base / r.value;
+    printTable('Crab danger', crabs, 'crabs');
+  }
+  const counters = results.filter((r) => r.table === 'counters');
+  const baseFor = (row) => counters.find((r) => r.row === row && r.col === 'spitter').rawValue;
+  for (const r of counters) r.rawValue = r.value;
+  for (const r of counters) r.value = r.rawValue / baseFor(r.row);
+  printTable('Counters', counters, 'counters');
 }
 
 if (isMainThread) {
   await main();
 } else {
-  parentPort.postMessage({ ...workerData, value: strongestSurvivable(workerData.towers, workerData.waves) });
+  parentPort.postMessage({ ...workerData, value: strongestSurvivable(workerData.towers, workerData.waves, workerData.loadout) });
 }
