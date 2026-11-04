@@ -162,7 +162,7 @@ export function createGame(def, seed = 1) {
     waveIndex: 0,
     waveT: def.waves[0].gap,
     fx: { chill: 0, surge: 0 },
-    stats: { kills: 0, leaked: 0, peak: 0, collected: 0, stalled: 0 },
+    stats: { kills: 0, leaked: 0, peak: 0, collected: 0, stalled: 0, damage: {}, waveDamage: {}, repaired: 0 },
   };
 }
 
@@ -197,7 +197,7 @@ function spawnCrab(game, type, lane, t, lat, group) {
   const hp = def.hp * (game.def.crabHp ?? 1) * hpMul;
   const crab = {
     type, def, lane, t, lat, hp, hpMul,
-    wave: game.waveIndex,
+    wave: group?.wave ?? game.waveIndex,
     hpMax: hp,
     leak: group?.leak ?? def.leak,
     speedMul: 1,
@@ -245,7 +245,7 @@ function updateWaves(game, dt) {
     game.waveT -= dt;
     if (game.waveT <= 0) {
       const wave = waves[game.waveIndex++];
-      for (const group of wave.groups) game.pending.push({ group, delay: group.delay ?? 0 });
+      for (const group of wave.groups) game.pending.push({ group: { ...group, wave: game.waveIndex }, delay: group.delay ?? 0 });
       game.waveT = game.waveIndex < waves.length ? waves[game.waveIndex].gap : 0;
       game.events.push({ t: 'wave', index: game.waveIndex, total: waves.length });
     }
@@ -270,7 +270,7 @@ function killCrab(game, crab) {
     const room = Math.max(0, crab.lane.width - kid.size);
     for (let i = 0; i < brood.count; i++) {
       const lat = Math.max(-room / 2, Math.min(room / 2, crab.lat + (game.rand() - 0.5) * 2.4));
-      spawnCrab(game, brood.type, crab.lane, crab.t + (game.rand() - 0.5) * 2, lat, { hpMul: crab.hpMul });
+      spawnCrab(game, brood.type, crab.lane, crab.t + (game.rand() - 0.5) * 2, lat, { hpMul: crab.hpMul, wave: crab.wave });
     }
   }
 }
@@ -350,7 +350,11 @@ function triggerSpecial(game, kind) {
   const def = SPECIALS[kind];
   if (kind === 'chill') game.fx.chill = def.secs;
   if (kind === 'surge') game.fx.surge = def.secs;
-  if (kind === 'patch') game.hp = Math.min(game.hpMax, game.hp + def.hp);
+  if (kind === 'patch') {
+    const repaired = Math.min(def.hp, game.hpMax - game.hp);
+    game.hp += repaired;
+    game.stats.repaired += repaired;
+  }
   if (kind === 'boom') {
     const n = game.crabs.length;
     for (let i = 0; i < n; i++) {
@@ -763,6 +767,10 @@ function updateCrabs(game, dt) {
       c.dead = true;
       game.hp -= c.leak;
       game.stats.leaked++;
+      const hit = (game.stats.damage[c.type] ??= { crabs: 0, damage: 0 });
+      hit.crabs++;
+      hit.damage += c.leak;
+      game.stats.waveDamage[c.wave] = (game.stats.waveDamage[c.wave] ?? 0) + c.leak;
       game.events.push({ t: 'leak', x: c.x, z: c.z, damage: c.leak });
     }
   }

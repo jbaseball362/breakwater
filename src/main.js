@@ -1,6 +1,6 @@
 // Boot, the game loop, input, menus and the HUD.
 
-import { SPECIALS, statLines, TOWERS, WORLD } from './content.js';
+import { CRABS, SPECIALS, statLines, TOWERS, WORLD } from './content.js';
 import { ATTRACT, LEVELS, ZONES } from './levels.js';
 import { choosePad, createGame, sendNextWave, starsFor, stepGame, STEP } from './sim.js';
 import { audio } from './audio.js';
@@ -68,6 +68,8 @@ function logRun(outcome) {
       collected: Math.round(game.stats.collected),
       unspent: Math.floor(game.parts),
       stalled: Math.round(game.stats.stalled),
+      damage: game.stats.damage,
+      repaired: game.stats.repaired,
       pads: game.pads.map((p) => `${p.type ?? 'empty'}:${p.level}`).join(' '),
     });
     localStorage.setItem(LOG_KEY, JSON.stringify(runs.slice(-LOG_LIMIT)));
@@ -389,6 +391,37 @@ function endTip(g) {
   return 'Every pad was built. Upgrade the towers nearest the gate first.';
 }
 
+// What reached the pump house, worst first, so you know what to build for next time.
+function renderDamageReport() {
+  const box = $('result-damage');
+  box.textContent = '';
+  const { damage, waveDamage, repaired } = game.stats;
+  const hits = Object.entries(damage).sort((a, b) => b[1].damage - a[1].damage);
+  box.hidden = !hits.length;
+  if (!hits.length) return;
+
+  box.append(make('h3', '', 'What got through'));
+  let total = 0;
+  for (const [type, hit] of hits) {
+    total += hit.damage;
+    const swatch = make('span', 'damage-swatch');
+    swatch.style.background = `#${CRABS[type].color.toString(16).padStart(6, '0')}`;
+    const row = make('div', 'damage-row');
+    row.append(swatch, make('span', '', CRABS[type].name), make('span', 'damage-count', `\u00d7${hit.crabs}`), make('span', 'damage-amount', `\u2212${hit.damage}`));
+    box.append(row);
+  }
+
+  const note = (label, value) => {
+    const line = make('p', 'damage-note');
+    line.append(make('span', '', label), make('b', '', value));
+    box.append(line);
+  };
+  note('Total damage', `\u2212${total}`);
+  const [worstWave, worstDamage] = Object.entries(waveDamage).sort((a, b) => b[1] - a[1])[0];
+  note(`Worst wave: ${worstWave} of ${game.def.waves.length}`, `\u2212${worstDamage}`);
+  if (repaired > 0) note('Repaired by Patch plates', `+${repaired}`);
+}
+
 function showResult() {
   mode = 'ended';
   const won = game.phase === 'won';
@@ -405,12 +438,14 @@ function showResult() {
   if (won) {
     const share = Math.round(game.hp / game.hpMax * 100);
     const goal = stars < 3 ? ' 3 bolts takes 90%.' : '';
+    const clean = Object.keys(game.stats.damage).length === 0 ? ' Nothing got through.' : '';
     $('result-text').textContent = nextLevel
-      ? `Pump house at ${share}%.${goal}`
-      : `Pump house at ${share}%.${goal} That was the last level. The causeway is yours.`;
+      ? `Pump house at ${share}%.${goal}${clean}`
+      : `Pump house at ${share}%.${goal}${clean} That was the last level. The causeway is yours.`;
   } else {
     $('result-text').textContent = endTip(game);
   }
+  renderDamageReport();
   $('btn-next').hidden = !(won && nextLevel);
   $('btn-retry').textContent = won ? 'Play again' : 'Try again';
   $('btn-retry').classList.toggle('primary', !won || !nextLevel);
