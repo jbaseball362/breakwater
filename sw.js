@@ -48,6 +48,17 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// The page is stored under both of its addresses. They're updated together because only one gets
+// visited, and the other would otherwise go stale and stop matching the scripts.
+const PAGE_ADDRESSES = ['./', 'index.html'].map((file) => new URL(file, self.location).href);
+
+function store(cache, request, response) {
+  const url = new URL(request.url);
+  const address = url.origin + url.pathname;
+  const keys = PAGE_ADDRESSES.includes(address) ? PAGE_ADDRESSES : [request];
+  return Promise.all(keys.map((key) => cache.put(key, response.clone())));
+}
+
 async function networkFirst(request) {
   const cache = await caches.open(CACHE);
   const cached = await cache.match(request, { ignoreSearch: true })
@@ -60,7 +71,7 @@ async function networkFirst(request) {
     // no-cache makes the browser ask the server whether a file changed. Without it, the browser
     // decides for itself that a recent copy is still good and a reload can miss an update.
     const response = await fetch(request, { signal: controller.signal, cache: 'no-cache' });
-    if (response.ok) await cache.put(request, response.clone());
+    if (response.ok) await store(cache, request, response);
     return response;
   } catch (err) {
     if (cached) return cached;
