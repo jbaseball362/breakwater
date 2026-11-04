@@ -5,7 +5,7 @@ import { CRABS, SPECIALS, TOWERS, WORLD } from '../content.js';
 import { applyPalette, buildWorld } from './world.js';
 import { buildHero, buildHydrant, buildTower, crabGeometry, crabMaterial, lambert, ringMesh } from './models.js';
 
-const CRAB_CAPACITY = { scuttler: 1400, runner: 600, hermit: 240, brood: 120, king: 6, medic: 120, molter: 500 };
+const CRAB_CAPACITY = { scuttler: 1400, runner: 600, hermit: 240, brood: 120, king: 6, medic: 150, molter: 500, flea: 900, bull: 150, jammer: 150 };
 const CRAB_SHAPES = {
   scuttler: { detail: 0 },
   runner: { detail: 0, claw: 0.75 },
@@ -14,8 +14,15 @@ const CRAB_SHAPES = {
   king: { detail: 2, kneed: true, spikes: true, claw: 1.5 },
   medic: { detail: 0, tendrils: true },
   molter: { detail: 0, spikes: true },
+  flea: { detail: 0, claw: 0.6 },
+  bull: { detail: 1, kneed: true, horns: true, claw: 1.3 },
+  jammer: { detail: 0, antenna: true },
 };
-const SHOT_COLORS = { hero: 0xdffaff, spitter: 0x8ff5e6 };
+// Shots change color and grow with level, so an upgrade shows up in the middle of a fight.
+const SHOT_COLORS = {
+  hero: [0xdffaff, 0x9fecff, 0xffe27a, 0xff9d5c],
+  spitter: [0x8ff5e6, 0x62e6ff, 0xffe27a],
+};
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 class Particles {
@@ -201,6 +208,7 @@ export class View {
     this.color = new THREE.Color();
     this.white = new THREE.Color(0xffffff);
     this.frostColor = new THREE.Color(0xbfeeff);
+    this.netColor = new THREE.Color(0xcbb56a);
     this.onSound = null;
 
     this.resize();
@@ -292,6 +300,14 @@ export class View {
       return { mesh, life: 0 };
     });
 
+    const arcMat = new THREE.MeshBasicMaterial({ color: 0xbfe9ff });
+    this.arcs = Array.from({ length: 60 }, () => {
+      const mesh = new THREE.Mesh(streakGeo, arcMat);
+      mesh.visible = false;
+      this.scene.add(mesh);
+      return { mesh, life: 0, len: 1, r: 0.07 };
+    });
+
     this.beamGeo = new THREE.CylinderGeometry(1, 1, 1, 8).rotateX(Math.PI / 2);
     this.beamOuter = new THREE.MeshBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.4, depthWrite: false });
     this.beamInner = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false });
@@ -344,7 +360,7 @@ export class View {
     this.floaters.length = 0;
     this.tips.length = 0;
     for (const ring of this.rings) { ring.life = 0; ring.mesh.visible = false; }
-    for (const s of this.streaks) { s.life = 0; s.mesh.visible = false; }
+    for (const s of [...this.streaks, ...this.arcs]) { s.life = 0; s.mesh.visible = false; }
     this.shake = 0;
   }
 
@@ -492,19 +508,19 @@ export class View {
   }
 
   buildPadView(pad) {
-    const def = TOWERS[pad.type];
-    const ring = ringMesh(WORLD.padR, def.color, 0.13);
+    const ring = ringMesh(WORLD.padR, pad.type ? TOWERS[pad.type].color : 0xffffff, 0.13);
     ring.position.set(pad.x, 0.03, pad.z);
     ring.material.uniforms.uFill.value = 0.2;
     this.levelGroup.add(ring);
-    const view = { pad, def, ring, tower: null, level: 0, pop: 0, beam: null };
+    const view = { pad, type: pad.type, ring, tower: null, level: 0, pop: 0, beam: null };
     if (pad.level > 0) this.setTower(view);
     return view;
   }
 
   setTower(view) {
     if (view.tower) this.levelGroup.remove(view.tower);
-    const { pad, def } = view;
+    const { pad } = view;
+    const def = TOWERS[pad.type];
     view.tower = buildTower(pad.type, pad.level, def.color);
     view.tower.position.set(pad.x, 0, pad.z);
     view.level = pad.level;
@@ -517,8 +533,15 @@ export class View {
       this.levelGroup.add(outer, inner);
       view.beam = { outer, inner };
     }
-    if (def.kind === 'aura' && !view.aura) {
-      view.aura = ringMesh(1, 0xffffff, 0.03);
+    if (!view.marker) {
+      view.marker = ringMesh(1.3, 0xffffff, 0.14);
+      view.marker.position.set(pad.x, 0.045, pad.z);
+      view.marker.material.uniforms.uFill.value = 0;
+      view.marker.visible = false;
+      this.levelGroup.add(view.marker);
+    }
+    if ((def.kind === 'aura' || def.kind === 'mast') && !view.aura) {
+      view.aura = ringMesh(1, def.kind === 'mast' ? def.color : 0xffffff, 0.03);
       view.aura.position.set(pad.x, 0.035, pad.z);
       view.aura.material.uniforms.uFill.value = 0.1;
       this.levelGroup.add(view.aura);
@@ -533,6 +556,34 @@ export class View {
     ring.mesh.material.uniforms.uColor.value.set(color);
     ring.mesh.position.set(x, 0.1, z);
     ring.mesh.visible = true;
+  }
+
+  // Lightning between each pair of points, with a kink halfway so it doesn't look like a laser.
+  spawnArc(points, level) {
+    const r = 0.06 * (1 + (level - 1) * 0.4);
+    const addSegment = (x0, z0, y0, x1, z1, y1) => {
+      const arc = this.arcs.find((a) => a.life <= 0);
+      if (!arc) return;
+      const dx = x1 - x0;
+      const dz = z1 - z0;
+      arc.life = 0.13;
+      arc.len = Math.hypot(dx, dz) || 0.1;
+      arc.r = r;
+      arc.mesh.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+      arc.mesh.rotation.y = Math.atan2(dx, dz);
+      arc.mesh.scale.set(r, r, arc.len);
+      arc.mesh.visible = true;
+    };
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i];
+      const b = points[i + 1];
+      const y0 = i === 0 ? 2 : 0.7;
+      const midX = (a.x + b.x) / 2 + (Math.random() - 0.5) * 0.8;
+      const midZ = (a.z + b.z) / 2 + (Math.random() - 0.5) * 0.8;
+      addSegment(a.x, a.z, y0, midX, midZ, 0.8);
+      addSegment(midX, midZ, 0.8, b.x, b.z, 0.7);
+      this.particles.burst(b.x, 0.7, b.z, 2, { color: 0xbfe9ff, speed: 2, up: 2, size: 0.09, life: 0.2 });
+    }
   }
 
   floatText(x, y, z, text, color = '#ffffff', size = 1) {
@@ -569,9 +620,11 @@ export class View {
           break;
         }
         case 'splash': {
-          this.spawnRing(e.x, e.z, e.radius * 1.15, 0xdff7ff);
-          this.particles.burst(e.x, 0.3, e.z, 26, { color: 0xeafcff, speed: 3.4, up: 9, gravity: 20, size: 0.17, life: 0.75, spread: e.radius });
-          this.particles.burst(e.x, 0.3, e.z, 8, { color: 0xffb341, speed: 5, up: 5, size: 0.13, life: 0.35 });
+          // Higher levels throw up a visibly bigger column of water and a hotter flash.
+          const power = 1 + (e.level - 1) * 0.6;
+          this.spawnRing(e.x, e.z, e.radius * 1.15, e.level >= 3 ? 0xffe27a : 0xdff7ff);
+          this.particles.burst(e.x, 0.3, e.z, Math.round(26 * power), { color: 0xeafcff, speed: 3.4 * (1 + (e.level - 1) * 0.2), up: 9 * (1 + (e.level - 1) * 0.15), gravity: 20, size: 0.17 * (1 + (e.level - 1) * 0.2), life: 0.75, spread: e.radius });
+          this.particles.burst(e.x, 0.3, e.z, Math.round(8 * power), { color: e.level >= 3 ? 0xffe27a : 0xffb341, speed: 5, up: 5, size: 0.13 * (1 + (e.level - 1) * 0.25), life: 0.35 });
           this.addShake(0.08);
           play('boom', { soft: true });
           break;
@@ -583,6 +636,7 @@ export class View {
             const dx = e.x1 - pad.x;
             const dz = e.z1 - pad.z;
             s.life = 0.16;
+            s.r = 0.12 * (1 + (pad.level - 1) * 0.45);
             s.mesh.position.set(pad.x + dx / 2, 1.5, pad.z + dz / 2);
             s.mesh.rotation.y = Math.atan2(dx, dz);
             s.len = Math.hypot(dx, dz);
@@ -636,6 +690,23 @@ export class View {
           }
           break;
         }
+        case 'chosen':
+          play('tick');
+          break;
+        case 'arc': {
+          this.spawnArc(e.points, e.pad.level);
+          play('shot');
+          break;
+        }
+        case 'net': {
+          this.spawnRing(e.x, e.z, e.radius + 0.4, 0xcbb56a, 0.5);
+          this.particles.burst(e.x, 0.8, e.z, 14, { color: 0xcbb56a, speed: 2.6, up: 3, size: 0.1, life: 0.4, spread: e.radius });
+          play('thunk', { high: true });
+          break;
+        }
+        case 'pump':
+          this.floatText(e.pad.x, 2.4, e.pad.z, `+${e.amount}`, '#8ef0a0', 0.8);
+          break;
         case 'heal':
           // Plenty of medics can pulse at once, so only some get a visible ring.
           if (Math.random() < 0.5) this.spawnRing(e.x, e.z, e.radius, 0x7dffcf, 0.4);
@@ -678,6 +749,7 @@ export class View {
 
       this.color.copy(slot.base);
       if (c.molted) this.color.lerp(this.white, 0.45);
+      if (c.netT > 0) this.color.lerp(this.netColor, 0.6);
       const frost = Math.max(c.frost, chilled ? 0.75 : 0);
       if (frost > 0) this.color.lerp(this.frostColor, frost * 0.6);
       if (c.flash > 0) this.color.lerp(this.white, 0.7);
@@ -758,10 +830,23 @@ export class View {
   syncPads(game, dt) {
     let rangeShown = false;
     for (const view of this.padViews) {
-      const { pad, def, ring } = view;
+      const { pad, ring } = view;
+      const u = ring.material.uniforms;
+      const def = pad.type ? TOWERS[pad.type] : null;
+      if (pad.type !== view.type) {
+        view.type = pad.type;
+        u.uColor.value.set(def ? def.color : 0xffffff);
+      }
+      if (!def) {
+        // An empty pad stays plain white until the player picks something.
+        u.uProgress.value = 0;
+        u.uBack.value = 0.6;
+        u.uOpacity.value = 1;
+        u.uFill.value = pad.active ? 0.4 : 0.1;
+        continue;
+      }
       if (pad.level !== view.level && pad.level > 0) this.setTower(view);
       const maxed = pad.level >= def.costs.length;
-      const u = ring.material.uniforms;
       if (maxed) {
         u.uOpacity.value = 0;
       } else {
@@ -773,8 +858,8 @@ export class View {
         u.uFill.value = pad.active ? 0.4 : 0.16;
       }
 
-      if (pad.active && def.kind !== 'bench') {
-        const st = def.levels[Math.min(pad.level, def.levels.length - 1)];
+      const st = def.levels[Math.min(pad.level, def.levels.length - 1)];
+      if (pad.active && st.range) {
         this.rangeRing.visible = true;
         this.rangeRing.position.set(pad.x, 0.05, pad.z);
         this.rangeRing.scale.setScalar(st.range);
@@ -785,7 +870,12 @@ export class View {
       if (!view.tower) continue;
       view.pop = Math.max(0, view.pop - dt * 3.2);
       const s = 1 + Math.sin(view.pop * Math.PI) * 0.35 - view.pop * 0.3;
-      view.tower.scale.setScalar(s);
+      // Towers also get physically bigger with each level.
+      view.tower.scale.setScalar(s * (1 + (pad.level - 1) * 0.1));
+      const boosted = pad.boost > 0;
+      const jammed = pad.jam < 1;
+      view.marker.visible = boosted || jammed;
+      if (view.marker.visible) view.marker.material.uniforms.uColor.value.set(jammed ? 0xff5a52 : TOWERS.mast.color);
 
       const { head, muzzle } = view.tower.userData;
       if (def.kind === 'aura') {
@@ -800,6 +890,19 @@ export class View {
           const r = Math.random() * st.range;
           this.particles.burst(pad.x + Math.cos(ang) * r, 0.2, pad.z + Math.sin(ang) * r, 1, { color: 0xffffff, speed: 0.4, up: 1, gravity: 2, size: 0.17, life: 0.7 });
         }
+        continue;
+      }
+      if (def.kind === 'mast') {
+        const mast = def.levels[pad.level - 1];
+        head.userData.spin.rotation.y += dt * 3;
+        view.aura.scale.setScalar(mast.range);
+        const a = view.aura.material.uniforms;
+        a.uThick.value = 0.1 / mast.range;
+        a.uOpacity.value = 0.4 + Math.sin(this.time.value * 3) * 0.12;
+        continue;
+      }
+      if (def.kind === 'pump') {
+        head.userData.piston.position.y = 1.02 + Math.abs(Math.sin(this.time.value * 5)) * 0.3;
         continue;
       }
       if (def.kind === 'bench') continue;
@@ -836,7 +939,7 @@ export class View {
         }
       } else if (k > 0.92 && def.kind !== 'pierce') {
         muzzle.getWorldPosition(this.projected);
-        this.particles.burst(this.projected.x, this.projected.y, this.projected.z, 2, { color: def.kind === 'splash' ? 0xffb341 : 0xdffaff, speed: 2, up: 1.5, gravity: 2, size: 0.12, life: 0.14 });
+        this.particles.burst(this.projected.x, this.projected.y, this.projected.z, 1 + pad.level, { color: def.kind === 'splash' ? 0xffb341 : 0xdffaff, speed: 2, up: 1.5, gravity: 2, size: 0.12 * (1 + (pad.level - 1) * 0.3), life: 0.14 });
       }
     }
     if (!rangeShown) this.rangeRing.visible = false;
@@ -879,14 +982,16 @@ export class View {
       const y = 1.45 + (0.5 - 1.45) * u;
       const sin = Math.sin(s.yaw);
       const cos = Math.cos(s.yaw);
-      const w = s.from === 'hero' ? 0.11 : 0.1;
-      const l = 0.55;
+      const level = s.level ?? 1;
+      const w = (s.from === 'hero' ? 0.11 : 0.1) * (1 + (level - 1) * 0.4);
+      const l = 0.55 * (1 + (level - 1) * 0.25);
       const o = n * 16;
       arr[o] = cos * w; arr[o + 1] = 0; arr[o + 2] = -sin * w; arr[o + 3] = 0;
       arr[o + 4] = 0; arr[o + 5] = w; arr[o + 6] = 0; arr[o + 7] = 0;
       arr[o + 8] = sin * l; arr[o + 9] = 0; arr[o + 10] = cos * l; arr[o + 11] = 0;
       arr[o + 12] = s.x; arr[o + 13] = y; arr[o + 14] = s.z; arr[o + 15] = 1;
-      this.color.set(SHOT_COLORS[s.from] ?? 0xffffff);
+      const colors = SHOT_COLORS[s.from];
+      this.color.set(colors ? colors[Math.min(level, colors.length) - 1] : 0xffffff);
       col[n * 3] = this.color.r; col[n * 3 + 1] = this.color.g; col[n * 3 + 2] = this.color.b;
       n++;
     }
@@ -900,14 +1005,20 @@ export class View {
       if (!s) return;
       const u = s.t / s.T;
       mesh.position.set(s.x0 + (s.x - s.x0) * u, 1.6 + (0.3 - 1.6) * u + 4 * 5 * u * (1 - u), s.z0 + (s.z - s.z0) * u);
+      mesh.scale.setScalar(1 + (s.level - 1) * 0.25);
     });
 
     for (const s of this.streaks) {
       if (s.life <= 0) continue;
       s.life -= dt;
       if (s.life <= 0) { s.mesh.visible = false; continue; }
-      const r = 0.12 * (s.life / 0.16);
+      const r = s.r * (s.life / 0.16);
       s.mesh.scale.set(r, r, s.len);
+    }
+    for (const a of this.arcs) {
+      if (a.life <= 0) continue;
+      a.life -= dt;
+      if (a.life <= 0) a.mesh.visible = false;
     }
     for (const ring of this.rings) {
       if (ring.life <= 0) continue;

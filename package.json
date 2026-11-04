@@ -8,6 +8,7 @@
     "start": "python3 -m http.server 5173 --bind 127.0.0.1",
     "balance": "node tools/balance.mjs",
     "calibrate": "node tools/calibrate.mjs",
-    "check:offline": "node tools/check-offline.mjs"
+    "check:offline": "node tools/check-offline.mjs",
+    "towers": "node tools/towers.mjs"
   }
 }

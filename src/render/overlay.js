@@ -33,9 +33,32 @@ export class Overlay {
     ctx.fillText(str, x, y);
   }
 
+  // One pip per level under each tower, filled in as it's upgraded.
+  drawPips(pad, def) {
+    const { ctx } = this;
+    const p = this.view.project(pad.x, 0, pad.z + 1.45);
+    const r = 3.4 * this.unit;
+    const total = def.costs.length;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(16,28,34,.9)';
+    for (let i = 0; i < total; i++) {
+      ctx.beginPath();
+      ctx.arc(p.x + (i - (total - 1) / 2) * r * 2.9, p.y, r, 0, 7);
+      ctx.fillStyle = i < pad.level ? '#ffd23f' : 'rgba(16,28,34,.55)';
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
   drawPads(game) {
     for (const pad of game.pads) {
+      if (!pad.type) {
+        const p = this.view.project(pad.x, 0, pad.z);
+        this.text('Choose', p.x, p.y, 15, pad.active ? '#ffd23f' : '#f2f7f5', 700);
+        continue;
+      }
       const def = TOWERS[pad.type];
+      if (pad.level > 0) this.drawPips(pad, def);
       if (pad.level >= def.costs.length) continue;
       const left = Math.ceil(def.costs[pad.level] - pad.paid);
       const ready = game.parts >= left;
@@ -43,10 +66,6 @@ export class Overlay {
         const p = this.view.project(pad.x, 0, pad.z);
         this.text(def.name, p.x, p.y - 11 * this.unit, 13, '#f2f7f5', 700);
         this.text(String(left), p.x, p.y + 7 * this.unit, 21, ready ? '#ffd23f' : '#c9d0d2');
-        if (pad.active) {
-          const tip = this.view.project(pad.x, 3, pad.z);
-          this.text(def.blurb, tip.x, tip.y, 14, '#f2f7f5', 700);
-        }
       } else if (pad.active || ready) {
         const p = this.view.project(pad.x, 3.2, pad.z);
         this.text(`Upgrade ${left}`, p.x, p.y, 13, ready ? '#ffd23f' : '#c9d0d2');

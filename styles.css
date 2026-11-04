@@ -231,6 +231,68 @@ button:focus-visible { outline: 3px solid var(--foam); outline-offset: 2px; }
   box-shadow: 0 3px 0 var(--safety-lo);
 }
 
+/* What you see when standing on a pad. Stats go at the top and tower buttons go over the pump
+   house at the bottom, so neither hides the yard. The panel lets touches through, so the joystick
+   still works underneath it, and only the buttons catch them. */
+.pad-stats {
+  position: absolute;
+  top: 142px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(calc(100% - 24px), 340px);
+  padding: 7px 12px 8px;
+  background: rgba(27, 42, 49, 0.94);
+  border-left: 5px solid var(--safety);
+  border-radius: 3px;
+  pointer-events: none;
+}
+.pad-stats h3 { margin: 0; font-size: 18px; font-weight: 800; line-height: 1.15; }
+.stat-blurb { margin: 0 0 3px; font-size: 15px; line-height: 1.15; }
+.stat-row { display: flex; justify-content: space-between; gap: 12px; font-size: 16px; line-height: 1.2; }
+.stat-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stat-value b { color: #ffd23f; font-weight: 800; }
+.stat-note { margin: 3px 0 0; font-size: 15px; font-weight: 700; color: #ffd23f; }
+
+.pad-panel {
+  position: absolute;
+  left: 50%;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(calc(100% - 20px), 560px);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  pointer-events: none;
+}
+.tower-card {
+  pointer-events: auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 6px 5px 12px;
+  text-align: left;
+  line-height: 1.1;
+  background: linear-gradient(180deg, var(--plate-hi), var(--plate));
+}
+.tower-card:active { transform: translateY(2px); box-shadow: inset 0 1px 0 #f3f6f7, 0 1px 0 #48535a; }
+.tower-card.selected { outline: 3px solid var(--safety); outline-offset: 1px; }
+.tower-swatch { position: absolute; inset: 0 auto 0 0; width: 7px; border-radius: 3px 0 0 3px; }
+.tower-name { font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; }
+.tower-cost { font-weight: 800; font-size: 17px; font-variant-numeric: tabular-nums; }
+.tower-card.short .tower-cost { color: #8c2a26; }
+.tower-role { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; }
+.tower-new {
+  position: absolute;
+  top: 22px;
+  right: 5px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: var(--crab);
+  color: var(--foam);
+  font-weight: 800;
+  font-size: 12px;
+}
+
 /* Screens */
 .screen { position: fixed; inset: 0; z-index: 3; }
 
@@ -377,7 +439,7 @@ button:focus-visible { outline: 3px solid var(--foam); outline-offset: 2px; }
 @media (max-height: 500px) {
   .title { font-size: 58px; }
   .title-screen { padding-top: 16px; }
-  .banner { top: 96px; }
+  .banner, .pad-stats { top: 96px; }
   .hud-status { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); width: min(40%, 300px); margin-top: 54px; }
 }
 

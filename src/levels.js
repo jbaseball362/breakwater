@@ -1,7 +1,9 @@
 // The levels and the difficulty system.
 //
 // Each level is one line in BLUEPRINTS: its name, road, towers, and wave rhythm. buildLevel turns
-// that into numbers, in three steps, so that a level's difficulty comes from a formula:
+// that into numbers, in three steps, so that a level's difficulty comes from a formula.
+// A level's tower string sets how many pads it has and what the player may choose from. Players
+// pick for themselves, and the bots also try other combinations when measuring difficulty.
 //
 //   1. Economy: income is set so you can afford a fixed share of the level's towers and upgrades.
 //      There's never enough for everything, so what you buy first matters.
@@ -20,7 +22,7 @@ const { spawnZ: N, gateZ: S } = WORLD;
 // How much stronger the waves could get before the expert bot loses. 2 means it could handle twice
 // as much, 1.1 means it has almost nothing to spare. This is the difficulty curve.
 export function targetHeadroom(n) {
-  return 1.05 + 0.95 * Math.exp(-(n - 1) / 12);
+  return 1.03 + 0.67 * Math.exp(-(n - 1) / 10);
 }
 
 // A casual player has to be able to get through the opening levels, however the expert does.
@@ -38,7 +40,7 @@ const LAST_LEVEL = 50;
 const MAX_GROUP = 320;
 const FINAL_WAVE_BOOST = 1.3;
 
-const crabToughness = (n) => 1 + (n - 1) * 0.025;
+const crabToughness = (n) => 1 + (n - 1) * 0.012;
 const scarcity = (n) => SCARCITY_START + (SCARCITY_END - SCARCITY_START) * (n - 1) / (LAST_LEVEL - 1);
 const baseGap = (n) => 23 - 8 * (n - 1) / (LAST_LEVEL - 1);
 const PREP_SECONDS = 14;
@@ -47,10 +49,10 @@ const CLEAR_SECONDS = 30;
 // What a wave should add up to, given the parts a player could have earned by then.
 const waveBudget = (parts) => 8 + 0.3 * parts;
 
-// How much more dangerous a wave budget is when spent on this crab than on scuttlers. Measured by
-// playing the same level with only that crab: raise a number if its waves are too hard for their
-// size. Without this, whichever crab is underpriced decides how hard every level containing it is.
-const DANGER = { scuttler: 1, runner: 2.4, hermit: 1.2, brood: 1.6, medic: 3, molter: 1.7, king: 1.5 };
+// How much more dangerous a wave budget is when spent on this crab than on scuttlers, measured
+// against a mixed team by `npm run towers`. Without this, whichever crab is underpriced decides how
+// hard every level containing it is.
+const DANGER = { scuttler: 1, runner: 1.51, hermit: 0.65, brood: 1.1, medic: 1.71, molter: 0.88, flea: 1.99, bull: 1.08, jammer: 1.24, king: 1.66 };
 
 function basePoints(type) {
   const def = CRABS[type];
@@ -118,80 +120,88 @@ const LAYOUTS = {
   },
 };
 
-const TOWER_LETTERS = { S: 'spitter', M: 'mortar', F: 'foam', H: 'hose', P: 'harpoon', B: 'bench' };
-const CRAB_LETTERS = { s: 'scuttler', r: 'runner', h: 'hermit', b: 'brood', k: 'king', m: 'medic', o: 'molter' };
-const GROUP_SPREAD = { hermit: 2, brood: 2.2, medic: 1.6, king: 6 };
-const MIN_COUNT = { scuttler: 3, runner: 3, molter: 3 };
+const TOWER_LETTERS = { S: 'spitter', M: 'mortar', F: 'foam', H: 'hose', P: 'harpoon', E: 'eel', N: 'net', A: 'mast', W: 'pump', B: 'bench' };
+const CRAB_LETTERS = { s: 'scuttler', r: 'runner', h: 'hermit', b: 'brood', k: 'king', m: 'medic', o: 'molter', f: 'flea', x: 'bull', j: 'jammer' };
+const GROUP_SPREAD = { hermit: 2, brood: 2.2, medic: 1.6, king: 6, flea: 1.5, bull: 1.8, jammer: 1.6 };
+const MIN_COUNT = { scuttler: 3, runner: 3, molter: 3, flea: 6 };
 
-// name, road, towers (build order), waves, options.
-// Towers: S spitter, M mortar, F foamer, H fire hose, P harpoon, B blaster bench.
-// Waves are space separated. s scuttler, r runner, h hermit, b brood, k king, m medic, o molter.
-// + joins groups in one wave. < and > pick a lane on two-lane roads. kk is two kings.
-// Options: intro, belts (both, trickle, jackpot, left, right), tanks (small), tempo (shorter
-// gaps below 1), plates (special plates on the belts), glass (pump house strength).
+// name, road, towers, waves, options.
+// Towers: one letter per pad, S spitter, M mortar, F foamer, H fire hose, P harpoon, E eel coil,
+// N net launcher, A signal mast, W bilge pump, B blaster bench. The letters used become the level's
+// choices, so keep to six or fewer. Their order is a good default that the bots start from.
+// Waves are space separated. s scuttler, r runner, h hermit, b brood, k king, m medic, o molter,
+// f flea, x bull, j jammer. + joins groups in one wave. < and > pick a lane on two-lane roads.
+// kk is two kings. Options: intro, belts (both, trickle, jackpot, left, right), tanks (small),
+// tempo (shorter gaps below 1), plates (special plates on the belts), glass (pump house strength).
 const lv = (name, layout, towers, waves, options = {}) => ({ name, layout, towers, waves, ...options });
 
 const BLUEPRINTS = [
   // Morning shift: one lane, learning the towers.
   lv('First shift', 'straight', 'SSS', 's s s'),
-  lv('Two belts', 'straight', 'SSMSB', 's s s s', { intro: 'Left belt: small and steady. Right belt: big and slow. The Mortar bursts across a crowd, and the Bench upgrades your blaster.' }),
+  lv('Two belts', 'straight', 'SSMSB', 's s s s', { intro: 'You choose what each pad builds now. Stand on an empty pad and tap a tower. Mortars burst across a crowd, and the Bench upgrades your blaster.' }),
   lv('Fast feet', 'straight', 'FSSMFS', 'r s r s+r r', { intro: 'Runners are twice as fast. A Foamer slows anything that walks past it.' }),
   lv('Shell game', 'straight', 'PSMPFS', 's h s+h h s+h', { intro: 'Hermit shells shrug off most damage. Harpoons punch straight through.' }),
   lv('Tight squeeze', 'narrow', 'MSSFMP', 's s+r h s r+s s+h', { intro: 'A narrow lane. Quicker to cross, and the crabs pack in tighter.' }),
   lv('Small tanks', 'straight', 'SMSFSM', 'r s s+r h s+h s', { tanks: 'small', intro: 'These hydrants fill fast. Empty them often or the belts stop.' }),
   lv('Jackpot', 'straight', 'MSPMFS', 's s+r h s+h r s+h', { belts: 'jackpot', intro: 'Almost everything is on the right belt. Build on the far side when you can afford the walk.' }),
-  lv('Trickle', 'straight', 'SSMFSSPB', 's r s+r h s+r s+h s', { belts: 'trickle', intro: 'The left belt carries nearly everything here, in very small plates.' }),
-  lv('Morning rush', 'straight', 'MMFSSPSB', 'r s s+r s r+h s s+r', { tempo: 0.75, plates: 'chill boom chill', intro: 'Colored plates are power-ups. They fire when you open the valve they landed in, so pick your moment.' }),
-  lv('Shift change', 'narrow', 'MSPFMSSB', 's+r h s+r h+s r s+h s+r h+s'),
+  lv('Sand fleas', 'straight', 'EEMFSEPB', 'f s f+s h f+r s+h f+s', { belts: 'trickle', intro: 'Sand fleas are tiny and spread out, so shells waste themselves on them. The Eel coil\'s lightning jumps from crab to crab.' }),
+  lv('Morning rush', 'straight', 'MMFSEPSB', 'r s f+r s r+h s f+r', { tempo: 0.75, plates: 'chill boom chill', intro: 'Colored plates are power-ups. They fire when you open the valve they landed in, so pick your moment.' }),
+  lv('Shift change', 'narrow', 'MSPFMESB', 's+r h f+r h+s r s+h f+s h+s'),
 
-  // Evening shift: bent roads, the hose, and the brood.
-  lv('The long way', 'bend', 'SMHFSH', 's r s h+s r+s s+h', { intro: 'The lane bends through the yard. A Fire hose hits everything along its jet, up to a limit.' }),
-  lv('Brood season', 'straight', 'MSMPSHB', 'b s+b b r+b s+b b+h', { intro: 'Kill a Brood and seven scuttlers burst out. Plan where they die.' }),
-  lv('Back road', 'bendBack', 'MSHFPSB', 's+r h s+h b r+s s+b h+s', { intro: 'The bend runs the other way, and you start on the right.' }),
-  lv('Left hook', 'hookLeft', 'SMHSFPMB', 's r s+r h+s b s+r h+s', { intro: 'The lane hugs the left side, so nearly all your pads are on the right.' }),
-  lv('Right hook', 'hookRight', 'MSHSFPMB', 'r+s h s+r b+s h+s r+s s+b', { plates: 'surge chill' }),
-  lv('Nursery', 'narrow', 'MMSHFPSB', 'b b+s b+r b b+h s+b b', { plates: 'boom' , intro: 'Brood crabs in a narrow lane. The middle of the yard is going to get crowded.' }),
-  lv('Dry left', 'straight', 'MSFHSMPB', 's r+s h s+b r+s h+s s+b', { belts: 'right', intro: 'The left belt is out of service. Every plate on the right counts.' }),
-  lv('Slalom', 'slalom', 'MSHFSPMB', 's r+s h+s b s+r h+s s+b r+h', { intro: 'Three bends. The crabs walk further, and you have to cross more often.' }),
-  lv('Second wind', 'straight', 'MSPHFSMB', 'o s+o r+o h+o o s+o o+b', { intro: 'Molters shed their shells at half health and bolt for the gate. Finish them quickly.' }),
-  lv('Golden hour', 'bend', 'MHPMFSHB', 's+r h+s b+s o+r h+b s+o b+h s+r', { plates: 'chill surge boom' }),
+  // Evening shift: bent roads, new tools, and the brood.
+  lv('The long way', 'bend', 'SMHFEH', 's r f h+s r+s s+h', { intro: 'The lane bends through the yard. A Fire hose hits everything along its jet, up to a limit.' }),
+  lv('Brood season', 'straight', 'MSMPEHB', 'b s+b b r+b s+b b+h', { intro: 'Kill a Brood and seven scuttlers burst out. Plan where they die.' }),
+  lv('Back road', 'bendBack', 'MEHFPEB', 's+r h f+h b r+s s+b h+f', { intro: 'The bend runs the other way, and you start on the right.' }),
+  lv('Left hook', 'hookLeft', 'SMHWFPM', 's r f+r h+s b s+r h+s', { intro: 'The lane hugs the left side. A Bilge pump earns parts over time, so build it early or not at all.' }),
+  lv('Right hook', 'hookRight', 'MEHWFPME', 'r+s h f+r b+s h+s r+f s+b', { plates: 'surge chill' }),
+  lv('Nursery', 'narrow', 'MMEHFPMB', 'b b+s b+r b b+h s+b b', { plates: 'boom', intro: 'Brood crabs in a narrow lane. The middle of the yard is going to get crowded.' }),
+  lv('Dry left', 'straight', 'MNFHNMPB', 's x+s h+r s+x r+s x+h s+x', { belts: 'right', intro: 'The left belt is out, and Bulls barge through foam. A Net launcher pins them in place.' }),
+  lv('Slalom', 'slalom', 'MNHEEPMB', 's r+s x+s b s+r h+x s+b r+h', { intro: 'Three bends. The crabs walk further, and you have to cross more often.' }),
+  lv('Second wind', 'straight', 'MSPHFSMB', 'o s+o r+o h+o f+o s+o o+b', { intro: 'Molters shed their shells at half health and bolt for the gate. Finish them quickly.' }),
+  lv('Golden hour', 'bend', 'MHPMNEHB', 's+r h+s b+s o+r x+b s+o b+h x+r', { plates: 'chill surge boom' }),
 
-  // Storm shift: two lanes, medics, and the first king.
-  lv('Split decision', 'twin', 'SMSSHFFP', '<s >s <s+>r <r+>s <h+>s <s+>h s+b', { intro: 'Two lanes now. The middle strip reaches both, but you have to cross to get there.' }),
-  lv('Forked road', 'fork', 'MSHSSFPB', 's r s+h b r+s h+s s+o b+s', { intro: 'The crabs split at the top of the yard, one half down each side.' }),
-  lv('Field medics', 'straight', 'MPSHFSMB', 's+m h+m s+m r+m b+m s+m h+m', { intro: 'Teal crabs heal everything around them. Harpoons can reach them through a crowd.' }),
-  lv('Low pressure', 'straight', 'MSFHSMPB', 's+r h+s b o+s r+h s+m s+b h+o', { belts: 'left', plates: 'patch chill', intro: 'Only the left belt works today, in small plates. Stay close to it.' }),
-  lv('Bottleneck', 'merge', 'MMSHFPSB', 's r+s h+s b s+o r+h s+b h+m', { intro: 'Two lanes join into one tight road. Hit them while they are stuck in the crush.' }),
-  lv('Thin walls', 'straight', 'MPSHFSMB', 's r+s h+s b+s o+r h+m s+b', { glass: 0.45, intro: 'The pump house is cracked and can take very few hits.' }),
-  lv('Rush hour', 'narrow', 'MMFHSSPB', 's r s+r h s+o r+s b s+r h+s', { tempo: 0.65, plates: 'boom chill surge boom', intro: 'Short gaps and big crowds. Save your plates for when the lane is full.' }),
-  lv('Crosswind', 'twin', 'MHSFFPSB', '<s+>r >s+<r <h+>s >h+<s <b+>o >b+<o <s+>m >s+<m', { plates: 'chill patch' }),
-  lv('Whitecaps', 'bendBack', 'MHPMFSHB', 'o+s m+s h+o b+m s+o r+h m+b s+h', { plates: 'surge boom patch' }),
-  lv('King tide', 'straight', 'PMPHFHMB', 's+r h+s b+s o+r k+s s+h m+s', { plates: 'surge boom patch', intro: 'A King crab is coming. If it reaches the gate it does huge damage. Harpoons help.' }),
+  // Storm shift: two lanes, medics, jammers, and the first king.
+  lv('Split decision', 'twin', 'SMAMHFFP', '<s >s <s+>r <r+>s <h+>s <s+>h s+b', { intro: 'Two lanes now, and the middle strip reaches both. A Signal mast makes nearby towers fire faster.' }),
+  lv('Forked road', 'fork', 'MAHEEPMB', 's r s+h b f+s h+s s+o b+x', { intro: 'The crabs split at the top of the yard, one half down each side.' }),
+  lv('Field medics', 'straight', 'MPSHFSMB', 's+m h+m f+m r+m b+m x+m h+m', { intro: 'Teal crabs heal everything around them. Harpoons can reach them through a crowd.' }),
+  lv('Low pressure', 'straight', 'MWFHEMPW', 's+r h+s b o+s f+h s+m s+b h+o', { belts: 'left', plates: 'patch chill', intro: 'Only the left belt works today, in small plates. A pump or two could help.' }),
+  lv('Bottleneck', 'merge', 'MMAHFPAB', 's r+s x+s b s+o r+h s+b h+m', { intro: 'Two lanes join into one tight road. Hit them while they are stuck in the crush.' }),
+  lv('Thin walls', 'straight', 'MPNHFNMB', 's r+s x+s b+s o+r h+m s+b', { glass: 0.45, intro: 'The pump house is cracked and can take very few hits.' }),
+  lv('Rush hour', 'narrow', 'MMFHEEPB', 's r f+r h s+o r+s b f+r h+s', { tempo: 0.65, plates: 'boom chill surge boom', intro: 'Short gaps and big crowds. Save your plates for when the lane is full.' }),
+  lv('Crosswind', 'twin', 'MHAFFPMB', '<s+>r >s+<j <h+>s >h+<j <b+>o >b+<j <s+>m >s+<j', { plates: 'chill patch', intro: 'Yellow Jammers slow every tower near them. Kill them from long range.' }),
+  lv('Whitecaps', 'bendBack', 'MHPMFEHB', 'o+s m+s h+o j+m s+o r+h m+b x+h', { plates: 'surge boom patch' }),
+  lv('King tide', 'straight', 'PMPHNHMB', 's+r h+s b+s o+j k+s x+h m+s', { plates: 'surge boom patch', intro: 'A King crab is coming. If it reaches the gate it does huge damage. Harpoons and Nets help.' }),
 
-  // Night shift: a single tool for the job, then kings.
-  lv('Night watch', 'straight', 'SSSSSSSSB', 's r s+r r+s s+o r+s s+m', { intro: 'Spitters only tonight. Upgrade your blaster early.' }),
-  lv('Mortar line', 'straight', 'MMMMFFB', 'r r+s s+o r+s h+r o+r s+r', { intro: 'Mortars only. Fast crabs will run out from under the shells, so slow them down.' }),
-  lv('Hose down', 'straight', 'HHHFHFB', 's+r h+s s+o b+s r+h s+m o+h', { intro: 'Fire hoses only. They lose reach in a thick crowd, so aim for coverage.' }),
-  lv('Harpoon alley', 'narrow', 'PPPSPFB', 'h h+s h+r b+h h+m o+h h+s', { intro: 'Harpoons and a wall of shells. Small crabs will slip past if you ignore them.' }),
-  lv('Blackout', 'hookLeft', 'MSHSFPMB', 's+r h+s b+s o+r m+s h+o s+b r+m', { belts: 'right', tanks: 'small', intro: 'One belt, small tanks, and a long walk back from the far pads.' }),
-  lv('Two fronts', 'twin', 'PMPHFHMB', '<s+>r >s+<h <b+>o >b+<m <k+>s >s+<h <s+>o', { plates: 'surge chill patch', intro: 'A King down one lane while the other keeps coming.' }),
-  lv('Graveyard shift', 'straight', 'MPHFSMHPB', 's r+s h+s b+s o+r m+s h+o b+m s+r h+b o+m s+h', { plates: 'chill boom surge patch', intro: 'Twelve waves. Pace yourself and keep the belts moving.' }),
-  lv('Sleepers', 'fork', 'MSHFSFPB', 'r+m r+s r+m o+r r+m h+r r+m o+m', { tempo: 0.8, plates: 'chill chill boom', intro: 'Runners with medics behind them, down both sides.' }),
-  lv('Undertow', 'slalom', 'MHPMFSHB', 'o+h s+o h+m o+b r+o h+o m+o b+h', { plates: 'surge boom patch', intro: 'Three bends full of shells and molters.' }),
-  lv('Midnight king', 'bend', 'PPMHFHMB', 's+r b+s h+m o+r k+s m+h s+b k+o', { plates: 'surge boom chill patch', intro: 'Two Kings tonight, one after the other. Keep some strength back for the second.' }),
+  // Night shift: a limited toolbox, then kings.
+  lv('Night watch', 'straight', 'SSSSSSSSB', 's r s+r f+s s+o r+j s+m', { intro: 'Spitters only tonight. Upgrade your blaster early.' }),
+  lv('Mortar line', 'straight', 'MMMMFFB', 'r r+s s+o r+s h+r o+j s+r', { intro: 'Mortars only. Fast crabs will run out from under the shells, so slow them down.' }),
+  lv('Hose down', 'straight', 'HHHFHFB', 's+r h+s s+o b+s j+h s+m o+h', { intro: 'Fire hoses only. They lose reach in a thick crowd, so aim for coverage.' }),
+  lv('Harpoon alley', 'narrow', 'PPPSPFB', 'h h+s h+r b+h h+m j+h h+s', { intro: 'Harpoons and a wall of shells. Small crabs will slip past if you ignore them.' }),
+  lv('Blackout', 'hookLeft', 'MEHWFPMW', 's+r h+s b+s o+r m+j h+o s+b x+m', { belts: 'right', tanks: 'small', intro: 'One belt, small tanks, and a long walk back from the far pads.' }),
+  lv('Two fronts', 'twin', 'PMPHNHMB', '<s+>r >s+<h <b+>o >j+<m <k+>s >s+<x <s+>o', { plates: 'surge chill patch', intro: 'A King down one lane while the other keeps coming.' }),
+  lv('Graveyard shift', 'straight', 'MPHFAMHPB', 's r+s h+s b+j o+r m+s h+o b+m x+r h+b o+j s+h', { plates: 'chill boom surge patch', intro: 'Twelve waves. Pace yourself and keep the belts moving.' }),
+  lv('Sleepers', 'fork', 'MEHFEFPB', 'r+m f+s r+m o+f r+j h+r f+m o+j', { tempo: 0.8, plates: 'chill chill boom', intro: 'Runners and fleas with medics behind them, down both sides.' }),
+  lv('Undertow', 'slalom', 'MHPMNEHB', 'o+h s+o h+m o+x j+o h+o m+o b+x', { plates: 'surge boom patch', intro: 'Three bends full of shells, Bulls and Molters.' }),
+  lv('Midnight king', 'bend', 'PPMHNHMB', 's+r b+s h+j o+x k+s m+h s+b k+o', { plates: 'surge boom chill patch', intro: 'Two Kings tonight, one after the other. Keep some strength back for the second.' }),
 
   // The red tide: everything at once.
-  lv('Red dawn', 'merge', 'MMHPFHSPB', 's+r h+s b+o m+s r+h k+s o+m b+h s+r', { plates: 'surge boom chill patch' }),
-  lv('Spring tide', 'twin', 'MPHFFHMPB', '<s+>r >h+<s <b+>o >m+<s <k+>r >k+<s s+m h+o', { tempo: 0.85, plates: 'chill boom surge patch' }),
-  lv('Landslide', 'hookRight', 'MHPMFSHPB', 'r+s h+m b+s o+r k+s h+m s+b r+o m+h', { plates: 'surge chill boom patch' }),
-  lv('Breach', 'twin', 'MPHFFHMPB', '<s+>r >s+<h <b+>o >m+<s <s+>h >o+<m s+r h+b', { glass: 0.5, plates: 'patch chill patch boom', intro: 'The pump house is cracked again, with two lanes to watch.' }),
-  lv('Heavy swell', 'slalom', 'MHPMFHPB', 's+o h+m b+r k+s o+m h+b s+r m+o k+h', { plates: 'surge boom patch chill' }),
-  lv('Two kings', 'straight', 'PPMHFHMPB', 's+r h+m b+o kk+s s+r m+h o+b kk+s', { plates: 'surge boom chill patch surge', intro: 'Two Kings side by side, twice.' }),
-  lv('Flash flood', 'narrow', 'MMFHPSHPB', 's+r o+s h+r b+s m+r s+o h+m r+b s+o', { tempo: 0.6, plates: 'boom chill boom surge boom', intro: 'Almost no gap between waves. The lane never empties.' }),
-  lv('Hold fast', 'straight', 'MPHFSMHPB', 's+o h+m b+s r+o k+m s+h o+b m+r s+h', { belts: 'right', glass: 0.5, plates: 'patch chill patch surge', intro: 'One belt and a cracked pump house. Everything has to go right.' }),
-  lv('High water', 'fork', 'MHPFMPHFB', 's+r h+o b+m k+s r+o m+h s+b kk+o h+m s+r', { plates: 'surge chill boom patch surge' }),
-  lv('The red tide', 'bend', 'MMHPFHPHB', 's+r h+o b+m o+s k+r m+h s+b kk+o h+m s+r kk+s', { plates: 'surge boom chill patch surge boom', intro: 'The whole beach is walking. Hold the gate and the causeway is yours.' }),
+  lv('Red dawn', 'merge', 'MMHPNHAPB', 's+r h+j b+o m+s x+h k+s o+m b+j s+r', { plates: 'surge boom chill patch' }),
+  lv('Spring tide', 'twin', 'MPHAFHMPB', '<s+>r >h+<j <b+>o >m+<s <k+>r >k+<s x+m h+o', { tempo: 0.85, plates: 'chill boom surge patch' }),
+  lv('Landslide', 'hookRight', 'MHPMNEHPB', 'r+s h+m j+s o+x k+s h+j s+b r+o m+x', { plates: 'surge chill boom patch' }),
+  lv('Breach', 'twin', 'MPHFAHMPB', '<s+>r >s+<h <b+>x >j+<s <s+>h >o+<m s+r h+b', { glass: 0.5, plates: 'patch chill patch boom', intro: 'The pump house is cracked again, with two lanes to watch.' }),
+  lv('Heavy swell', 'slalom', 'MHPMNHPB', 's+o h+j b+r k+s o+m x+b s+r m+o k+h', { plates: 'surge boom patch chill' }),
+  lv('Two kings', 'straight', 'PPMHNHMPB', 's+r h+j b+o kk+s x+r m+h o+b kk+j', { plates: 'surge boom chill patch surge', intro: 'Two Kings side by side, twice.' }),
+  lv('Flash flood', 'narrow', 'MMFHPEHPB', 's+r o+s f+r b+s m+r j+o x+m r+b f+o', { tempo: 0.6, plates: 'boom chill boom surge boom', intro: 'Almost no gap between waves. The lane never empties.' }),
+  lv('Hold fast', 'straight', 'MPHNWMHPB', 's+o h+j b+s x+o k+m s+h o+b j+r x+h', { belts: 'right', glass: 0.5, plates: 'patch chill patch surge', intro: 'One belt and a cracked pump house. Everything has to go right.' }),
+  lv('High water', 'fork', 'MHPAMPHNB', 's+r h+o j+m k+s r+o x+h s+b kk+j h+m f+r', { plates: 'surge chill boom patch surge' }),
+  lv('The red tide', 'bend', 'MMHPNHPAB', 's+r h+j b+m x+s k+r m+h f+b kk+o j+m x+r kk+s', { plates: 'surge boom chill patch surge boom', intro: 'The whole beach is walking. Hold the gate and the causeway is yours.' }),
 ];
+
+// The first level each tower appears on, so the pad menu can mark it as new.
+const firstOffered = {};
+BLUEPRINTS.forEach((bp, i) => {
+  for (const letter of bp.towers) firstOffered[TOWER_LETTERS[letter]] ??= i + 1;
+});
 
 export const ZONES = [
   { key: 'morning', name: 'Morning shift' },
@@ -276,16 +286,17 @@ export function buildLevel(bp, n, threat = 1) {
   const layout = LAYOUTS[bp.layout];
   const pads = [...bp.towers].map((letter, i) => {
     const [x, z] = layout.slots[i];
-    return { type: TOWER_LETTERS[letter], x, z };
+    return { authored: TOWER_LETTERS[letter], x, z };
   });
+  const offer = [...new Set(pads.map((p) => p.authored))];
 
   const tokens = bp.waves.split(' ');
   const gap = baseGap(n) * (bp.tempo ?? 1);
   const arrivals = tokens.map((_, i) => PREP_SECONDS + i * gap);
   const seconds = arrivals[arrivals.length - 1] + CLEAR_SECONDS;
 
-  const allCosts = pads.reduce((sum, p) => sum + TOWERS[p.type].costs.reduce((a, b) => a + b, 0), 0);
-  const start = Math.round(Math.max(TOWERS[pads[0].type].costs[0] * 0.6, allCosts * 0.06) / 5) * 5;
+  const allCosts = pads.reduce((sum, p) => sum + TOWERS[p.authored].costs.reduce((a, b) => a + b, 0), 0);
+  const start = Math.round(Math.max(TOWERS[pads[0].authored].costs[0] * 0.6, allCosts * 0.06) / 5) * 5;
   const rate = Math.max(2, (allCosts * scarcity(n) - start) / (seconds * COLLECT_EFFICIENCY));
 
   const belts = makeBelts(bp, rate);
@@ -321,6 +332,8 @@ export function buildLevel(bp, n, threat = 1) {
     lanes: layout.lanes,
     belts,
     pads,
+    offer,
+    newTowers: offer.filter((type) => firstOffered[type] === n),
     waves,
   };
 }

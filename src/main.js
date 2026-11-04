@@ -1,8 +1,8 @@
 // Boot, the game loop, input, menus and the HUD.
 
-import { SPECIALS, TOWERS, WORLD } from './content.js';
+import { SPECIALS, statLines, TOWERS, WORLD } from './content.js';
 import { ATTRACT, LEVELS, ZONES } from './levels.js';
-import { createGame, sendNextWave, starsFor, stepGame, STEP } from './sim.js';
+import { choosePad, createGame, sendNextWave, starsFor, stepGame, STEP } from './sim.js';
 import { audio } from './audio.js';
 import { View } from './render/view.js';
 import { Overlay } from './render/overlay.js';
@@ -68,7 +68,7 @@ function logRun(outcome) {
       collected: Math.round(game.stats.collected),
       unspent: Math.floor(game.parts),
       stalled: Math.round(game.stats.stalled),
-      pads: game.pads.map((p) => p.level).join(''),
+      pads: game.pads.map((p) => `${p.type ?? 'empty'}:${p.level}`).join(' '),
     });
     localStorage.setItem(LOG_KEY, JSON.stringify(runs.slice(-LOG_LIMIT)));
   } catch {
@@ -80,7 +80,7 @@ const isUnlocked = (level) => level.id === 1 || (save.stars[level.id - 1] ?? 0) 
 
 // ---------- Input ----------
 
-const joy = { active: false, ox: 0, oy: 0, x: 0, y: 0, radius: 54, id: null, mx: 0, mz: 0 };
+const joy = { active: false, ox: 0, oy: 0, x: 0, y: 0, radius: 46, id: null, mx: 0, mz: 0 };
 const keys = new Set();
 const input = { mx: 0, mz: 0 };
 
@@ -116,15 +116,22 @@ function bindInput(surface) {
   });
   surface.addEventListener('pointermove', (e) => {
     if (!joy.active || e.pointerId !== joy.id) return;
-    const dx = e.clientX - joy.ox;
-    const dy = e.clientY - joy.oy;
-    const d = Math.hypot(dx, dy);
-    const k = d > joy.radius ? joy.radius / d : 1;
-    joy.x = joy.ox + dx * k;
-    joy.y = joy.oy + dy * k;
-    const mag = Math.min(1, d / joy.radius);
-    // Small drags still walk at a useful speed, so you never have to reach for the rim.
-    const eased = d < 6 ? 0 : 0.45 + 0.55 * mag;
+    let dx = e.clientX - joy.ox;
+    let dy = e.clientY - joy.oy;
+    let d = Math.hypot(dx, dy);
+    // The base trails your thumb, so changing direction never means dragging all the way back.
+    if (d > joy.radius) {
+      const pull = (d - joy.radius) / d;
+      joy.ox += dx * pull;
+      joy.oy += dy * pull;
+      dx -= dx * pull;
+      dy -= dy * pull;
+      d = joy.radius;
+    }
+    joy.x = e.clientX;
+    joy.y = e.clientY;
+    // Full speed comes early, so you don't have to reach for the rim to run.
+    const eased = d < 4 ? 0 : 0.5 + 0.5 * Math.min(1, d / (joy.radius * 0.6));
     joy.mx = d ? dx / d * eased : 0;
     joy.mz = d ? dy / d * eased : 0;
   });
@@ -144,6 +151,9 @@ function bindInput(surface) {
       if (mode === 'playing') e.preventDefault();
     }
     if ((e.code === 'Escape' || e.code === 'KeyP') && (mode === 'playing' || mode === 'paused')) togglePause();
+    const digit = /^Digit([1-6])$/.exec(e.code);
+    const pad = mode === 'playing' && game.pads.find((p) => p.active);
+    if (digit && pad && pad.level === 0 && game.offer[digit[1] - 1]) pickTower(pad, game.offer[digit[1] - 1]);
   });
   addEventListener('keyup', (e) => keys.delete(e.code));
   addEventListener('blur', () => {
@@ -232,6 +242,96 @@ let bannerT = 0;
 let coachStep = 0;
 let coachT = 0;
 
+// ---------- The pad panel: choosing a tower and seeing what an upgrade buys ----------
+
+let panelSignature = null;
+
+function make(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function pickTower(pad, type) {
+  audio.unlock();
+  choosePad(game, pad, type);
+  panelSignature = null;
+}
+
+function statsBlock(pad) {
+  const def = TOWERS[pad.type];
+  const maxed = pad.level >= def.costs.length;
+  const box = $('pad-stats');
+  box.textContent = '';
+  let title = `${def.name}, level ${pad.level} \u2192 ${pad.level + 1}`;
+  if (pad.level === 0) title = def.name;
+  if (maxed) title = `${def.name}, max level`;
+  box.append(make('h3', '', title), make('p', 'stat-blurb', def.blurb));
+
+  for (const line of statLines(pad.type, pad.level)) {
+    const row = make('div', 'stat-row');
+    row.append(make('span', '', line.label));
+    const value = make('span', 'stat-value');
+    if (line.next === null) {
+      value.textContent = line.now;
+    } else if (line.now === null || line.now === line.next) {
+      value.append(make('b', '', line.next));
+    } else {
+      value.append(`${line.now} \u2192 `, make('b', '', line.next));
+    }
+    row.append(value);
+    box.append(row);
+  }
+  if (!maxed && pad.level > 0) {
+    box.append(make('p', 'stat-note', pad.armed ? `Upgrade costs ${def.costs[pad.level]}` : 'Step off and back on to buy the next level'));
+  }
+}
+
+function choiceCards(pad) {
+  const box = $('pad-panel');
+  box.textContent = '';
+  const benchTaken = game.pads.some((p) => p !== pad && p.type === 'bench');
+  for (const type of game.offer) {
+    if (type === 'bench' && benchTaken) continue;
+    const def = TOWERS[type];
+    const cost = def.costs[0];
+    const card = make('button', `plate tower-card${pad.type === type ? ' selected' : ''}${game.parts < cost ? ' short' : ''}`);
+    const swatch = make('span', 'tower-swatch');
+    swatch.style.background = `#${def.color.toString(16).padStart(6, '0')}`;
+    card.append(swatch, make('span', 'tower-name', def.name), make('span', 'tower-cost', String(cost)), make('span', 'tower-role', def.role));
+    if (level.newTowers?.includes(type)) card.append(make('span', 'tower-new', 'New'));
+    card.addEventListener('click', () => pickTower(pad, type));
+    box.append(card);
+  }
+}
+
+function updatePadPanel() {
+  const panel = $('pad-panel');
+  const stats = $('pad-stats');
+  const pad = mode === 'playing' ? game.pads.find((p) => p.active) : null;
+  if (!pad) {
+    panel.hidden = true;
+    stats.hidden = true;
+    panelSignature = null;
+    return;
+  }
+  const choosing = pad.level === 0 && game.offer.length > 1;
+  const canAfford = choosing ? game.offer.map((type) => game.parts >= TOWERS[type].costs[0]).join() : '';
+  const signature = [game.pads.indexOf(pad), pad.type, pad.level, pad.armed, canAfford].join('|');
+  if (signature === panelSignature) return;
+  panelSignature = signature;
+  if (pad.type) {
+    statsBlock(pad);
+    // They share a spot on screen, and these stats are what matters while you're on a pad.
+    $('banner').hidden = true;
+    bannerT = 0;
+  }
+  stats.hidden = !pad.type;
+  if (choosing) choiceCards(pad);
+  panel.hidden = !choosing;
+}
+
 function setText(id, value) {
   if (hudCache[id] !== value) {
     hudCache[id] = value;
@@ -261,6 +361,9 @@ function startLevel(l) {
   for (const key of Object.keys(hudCache)) delete hudCache[key];
   $('banner').hidden = true;
   $('coach').hidden = true;
+  $('pad-panel').hidden = true;
+  $('pad-stats').hidden = true;
+  panelSignature = null;
   showScreen(null);
   if (l.intro) showBanner(l.intro, 7);
   audio.unlock();
@@ -346,7 +449,8 @@ function coach(dt) {
     message = 'Stand on a tower to upgrade it. Walking through crabs slows you down.';
     if (coachT <= 0) coachStep = 4;
   }
-  el.hidden = !message;
+  // The pad panel sits in the same spot, and it's what matters while you're standing on a pad.
+  el.hidden = !message || !$('pad-panel').hidden;
   if (message) setText('coach', message);
   return arrow;
 }
@@ -410,6 +514,7 @@ function drainEvents() {
   const playing = mode === 'playing' || mode === 'ended';
   for (const e of game.events) {
     if (!playing) break;
+    if (e.t === 'built') navigator.vibrate?.(15);
     if (e.t === 'special') showBanner(SPECIALS[e.kind].banner, 2.6);
     if (e.t === 'wave' && e.index === e.total) showBanner('Final wave', 2.2, true);
     if (e.t === 'wave' && game.def.waves[e.index - 1].groups.some((g) => g.type === 'king')) showBanner('A King crab is coming', 3, true);
@@ -459,6 +564,7 @@ function tick(real) {
   view.render();
 
   const inPlay = mode === 'playing' || mode === 'paused' || mode === 'ended';
+  if (inPlay) updatePadPanel();
   const arrow = inPlay ? coach(simDt) : null;
   if (inPlay) updateHud(simDt);
   overlay.draw(game, joy, { dt: real, time: performance.now() / 1000, labels: inPlay, arrow });

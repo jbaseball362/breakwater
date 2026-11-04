@@ -121,6 +121,7 @@ function makeBelt(spec, side) {
 
 export function createGame(def, seed = 1) {
   const [heroX, heroZ] = def.heroStart ?? HERO.start;
+  const offer = def.offer ?? [...new Set(def.pads.map((p) => p.type))];
   return {
     def,
     rand: makeRng(seed * 7919 + (def.id || 1)),
@@ -141,12 +142,16 @@ export function createGame(def, seed = 1) {
       def.belts.left ? makeBelt(def.belts.left, -1) : null,
       def.belts.right ? makeBelt(def.belts.right, 1) : null,
     ].filter(Boolean),
+    offer,
     pads: def.pads.map((p) => ({
-      type: p.type, x: p.x, z: p.z,
+      // A pad starts empty unless the level only offers one tower.
+      type: p.type ?? (offer.length === 1 ? offer[0] : null),
+      x: p.x, z: p.z,
       level: p.built ?? 0, paid: 0,
       armed: true, active: false,
       cool: 0, aim: Math.PI, kick: 0,
       beam: false, target: null,
+      boost: 0, jam: 1, earned: 0,
     })),
     crabs: [],
     shots: [],
@@ -158,6 +163,19 @@ export function createGame(def, seed = 1) {
     fx: { chill: 0, surge: 0 },
     stats: { kills: 0, leaked: 0, peak: 0, collected: 0, stalled: 0 },
   };
+}
+
+// Picks what an unbuilt pad will build. Anything already paid in goes back to the player,
+// so a wrong tap is never expensive. Only one Bench per level, since you only have one blaster.
+export function choosePad(game, pad, type) {
+  if (pad.level > 0 || pad.type === type || !game.offer.includes(type)) return false;
+  if (type === 'bench' && game.pads.some((p) => p !== pad && p.type === 'bench')) return false;
+  game.parts += pad.paid;
+  pad.paid = 0;
+  pad.type = type;
+  pad.armed = true;
+  game.events.push({ t: 'chosen', pad });
+  return true;
 }
 
 export function sendNextWave(game) {
@@ -183,6 +201,7 @@ function spawnCrab(game, type, lane, t, lat, group) {
     leak: group?.leak ?? def.leak,
     speedMul: 1,
     molted: false,
+    netT: 0,
     healT: game.rand() * (def.heal?.every ?? 1),
     pending: 0, slow: 0, flash: 0, frost: 0,
     phase: game.rand() * Math.PI * 2,
@@ -316,10 +335,10 @@ function closestHits(hits, max) {
   return hits;
 }
 
-function fireShot(game, x, z, target, dmg, from) {
+function fireShot(game, x, z, target, dmg, from, level) {
   target.pending += dmg * target.def.armor;
   game.shots.push({
-    x, z, target, dmg, from,
+    x, z, target, dmg, from, level,
     d0: Math.hypot(target.x - x, target.z - z) || 1,
     dist: 0,
     yaw: Math.atan2(target.x - x, target.z - z),
@@ -396,10 +415,12 @@ function updateHero(game, input, dt) {
 
   // Pads: standing on one pays into it. Partial payments stay on the pad.
   for (const p of game.pads) {
-    const def = TOWERS[p.type];
     const inside = Math.hypot(h.x - p.x, h.z - p.z) < WORLD.padR;
     p.active = inside;
     if (!inside) { p.armed = true; continue; }
+    // An empty pad waits until you've picked what goes on it.
+    if (!p.type) continue;
+    const def = TOWERS[p.type];
     if (!p.armed || p.level >= def.costs.length || game.parts <= 0) continue;
     const cost = def.costs[p.level];
     const pay = Math.min(game.parts, cost - p.paid, Math.max(70, cost * 0.9) * dt);
@@ -427,7 +448,7 @@ function updateHero(game, input, dt) {
     if (h.cool <= 0) {
       h.cool = 1 / rate;
       h.kick = 1;
-      fireShot(game, h.x, h.z, target, stats.dmg, 'hero');
+      fireShot(game, h.x, h.z, target, stats.dmg, 'hero', h.level + 1);
       game.events.push({ t: 'shot', from: 'hero' });
     }
   }
@@ -459,16 +480,115 @@ function updateBelts(game, dt) {
   }
 }
 
+// Masts speed up the towers near them, and jammers slow them down.
+function updateTowerSupport(game) {
+  const masts = game.pads.filter((p) => p.level > 0 && TOWERS[p.type].kind === 'mast');
+  const jammers = game.crabs.filter((c) => c.def.jam && c.t >= 0 && !c.dead);
+  for (const p of game.pads) {
+    p.boost = 0;
+    p.jam = 1;
+    if (p.level <= 0) continue;
+    const { kind } = TOWERS[p.type];
+    if (kind === 'mast' || kind === 'pump' || kind === 'bench') continue;
+    for (const m of masts) {
+      const st = TOWERS.mast.levels[m.level - 1];
+      if (Math.hypot(m.x - p.x, m.z - p.z) < st.range) p.boost = Math.max(p.boost, st.boost);
+    }
+    for (const j of jammers) {
+      if (Math.hypot(j.x - p.x, j.z - p.z) < j.def.jam.radius) p.jam = Math.min(p.jam, j.def.jam.factor);
+    }
+  }
+}
+
+function toughestCrab(game, x, z, range, skipNetted = false) {
+  let best = null;
+  const r2 = range * range;
+  for (const c of game.crabs) {
+    if (c.dead || c.t < 0 || (skipNetted && c.netT > 0)) continue;
+    const dx = c.x - x;
+    const dz = c.z - z;
+    if (dx * dx + dz * dz <= r2 && (!best || c.hp > best.hp)) best = c;
+  }
+  return best;
+}
+
+function fireNet(game, p, st) {
+  const target = toughestCrab(game, p.x, p.z, st.range, true);
+  if (!target) return false;
+  p.aim = Math.atan2(target.x - p.x, target.z - p.z);
+  const hits = [];
+  for (const c of game.crabs) {
+    if (c.dead || c.t < 0) continue;
+    const dx = c.x - target.x;
+    const dz = c.z - target.z;
+    const r = st.radius + c.def.size * 0.3;
+    const d = dx * dx + dz * dz;
+    if (d < r * r) {
+      c.hitKey = d;
+      hits.push(c);
+    }
+  }
+  for (const c of closestHits(hits, st.maxHits)) {
+    c.netT = Math.max(c.netT, st.hold * (c.def.bar ? st.bossHold : 1));
+  }
+  game.events.push({ t: 'net', x: target.x, z: target.z, radius: st.radius, pad: p });
+  return true;
+}
+
+function fireChain(game, p, st, first) {
+  const struck = [first];
+  let from = first;
+  while (struck.length < st.jumps) {
+    let next = null;
+    let bestD = st.reach * st.reach;
+    for (const c of game.crabs) {
+      if (c.dead || c.t < 0 || struck.includes(c)) continue;
+      const dx = c.x - from.x;
+      const dz = c.z - from.z;
+      const d = dx * dx + dz * dz;
+      if (d < bestD) { bestD = d; next = c; }
+    }
+    if (!next) break;
+    struck.push(next);
+    from = next;
+  }
+  const points = [{ x: p.x, z: p.z }, ...struck.map((c) => ({ x: c.x, z: c.z }))];
+  for (const c of struck) hurt(game, c, st.dmg);
+  game.events.push({ t: 'arc', pad: p, points });
+}
+
 function updateTowers(game, dt) {
-  const rateScale = game.fx.surge > 0 ? 2 : 1;
+  updateTowerSupport(game);
+  const surge = game.fx.surge > 0 ? 2 : 1;
   for (const p of game.pads) {
     p.kick = Math.max(0, p.kick - dt * 6);
     p.beam = false;
     if (p.level <= 0) continue;
     const def = TOWERS[p.type];
-    if (def.kind === 'bench') continue;
+    if (def.kind === 'bench' || def.kind === 'mast') continue;
     const st = def.levels[p.level - 1];
     p.cool -= dt;
+    const rateScale = surge * (1 + p.boost) * p.jam;
+
+    if (def.kind === 'pump') {
+      const earned = st.rate * dt;
+      game.parts += earned;
+      game.stats.collected += earned;
+      p.earned += earned;
+      if (p.earned >= 5) {
+        game.events.push({ t: 'pump', pad: p, amount: Math.floor(p.earned) });
+        p.earned -= Math.floor(p.earned);
+      }
+      continue;
+    }
+
+    if (def.kind === 'net') {
+      if (p.cool <= 0 && fireNet(game, p, st)) {
+        p.cool = 1 / (st.rate * rateScale);
+        p.kick = 1;
+      }
+      continue;
+    }
 
     if (def.kind === 'aura') {
       let any = false;
@@ -487,7 +607,9 @@ function updateTowers(game, dt) {
       continue;
     }
 
-    if (!stillValid(p.target, p.x, p.z, st.range)) p.target = firstCrab(game, p.x, p.z, st.range);
+    // Harpoons hunt the biggest crab in range. Everything else goes for the one nearest the gate.
+    if (def.kind === 'pierce') p.target = toughestCrab(game, p.x, p.z, st.range);
+    else if (!stillValid(p.target, p.x, p.z, st.range)) p.target = firstCrab(game, p.x, p.z, st.range);
     const t = p.target;
     if (!t) continue;
     const want = Math.atan2(t.x - p.x, t.z - p.z);
@@ -523,12 +645,12 @@ function updateTowers(game, dt) {
     p.kick = 1;
 
     if (def.kind === 'shot') {
-      fireShot(game, p.x, p.z, t, st.dmg, p.type);
+      fireShot(game, p.x, p.z, t, st.dmg, p.type, p.level);
       game.events.push({ t: 'shot', from: p.type, pad: p });
     } else if (def.kind === 'splash') {
       // Lead the target so the shell lands where the crowd will be.
       const lead = lanePos(t.lane, t.t + t.def.speed * (1 - t.slow) * SHELL_TIME, t.lat);
-      game.shells.push({ x0: p.x, z0: p.z, x: lead.x, z: lead.z, t: 0, T: SHELL_TIME, dmg: st.dmg, radius: st.radius, maxHits: st.maxHits });
+      game.shells.push({ x0: p.x, z0: p.z, x: lead.x, z: lead.z, t: 0, T: SHELL_TIME, dmg: st.dmg, radius: st.radius, maxHits: st.maxHits, level: p.level });
       game.events.push({ t: 'shot', from: p.type, pad: p });
     } else if (def.kind === 'pierce') {
       const ax = Math.sin(want);
@@ -542,11 +664,14 @@ function updateTowers(game, dt) {
         if (along < 0 || along > st.range) continue;
         if (Math.abs(dx * az - dz * ax) < 0.45 + c.def.size * 0.4) hits.push({ c, along });
       }
-      hits.sort((a, b) => a.along - b.along);
+      // Goes through the small stuff and spends its hits on the biggest crabs along the line.
+      hits.sort((a, b) => b.c.hp - a.c.hp);
       const struck = hits.slice(0, st.pierce);
       for (const { c } of struck) hurt(game, c, st.dmg, true);
-      const reach = struck.length ? struck[struck.length - 1].along + 1 : st.range;
+      const reach = struck.length ? Math.max(...struck.map((h) => h.along)) + 1 : st.range;
       game.events.push({ t: 'harpoon', pad: p, x1: p.x + ax * reach, z1: p.z + az * reach });
+    } else if (def.kind === 'chain') {
+      fireChain(game, p, st, t);
     }
   }
 }
@@ -593,7 +718,7 @@ function updateProjectiles(game, dt) {
       }
     }
     for (const c of closestHits(hits, s.maxHits)) hurt(game, c, s.dmg);
-    game.events.push({ t: 'splash', x: s.x, z: s.z, radius: s.radius });
+    game.events.push({ t: 'splash', x: s.x, z: s.z, radius: s.radius, level: s.level });
     game.shells[i] = game.shells[game.shells.length - 1];
     game.shells.pop();
   }
@@ -619,7 +744,8 @@ function updateCrabs(game, dt) {
   for (const c of game.crabs) {
     if (c.dead) continue;
     const pace = (1 - c.slow) * (c.def.slowResist < 1 ? Math.max(chill, 0.7) : chill);
-    c.t += c.def.speed * c.speedMul * pace * dt;
+    if (c.netT > 0) c.netT -= dt;
+    else c.t += c.def.speed * c.speedMul * pace * dt;
     if (c.def.heal && c.t >= 0) healAround(game, c, dt);
     c.lat += Math.sin(game.time * 1.6 + c.phase) * 0.3 * dt;
     const room = Math.max(0, c.lane.width - c.def.size * 0.8) / 2;

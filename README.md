@@ -41,10 +41,39 @@ Drag anywhere to walk, or use WASD or the arrow keys. Your blaster and towers fi
 
 1. Number plates ride the belts and drop down the pipes into the hydrants.
 2. Step into a hydrant's ring to open its valve and collect the parts. A full hydrant stops its belt.
-3. Stand on a pad to spend parts on a tower. Step off and back on to upgrade it.
-4. Stop the crabs before they reach the pump house. Walking through crabs slows you down.
+3. Stand on an empty pad and tap the tower you want, or press 1 to 6 on a keyboard. Your parts pay for it. Tap a different tower before it's finished and you get your parts back.
+4. Stand on a finished tower to see what its next level adds. Step off and back on to buy it.
+5. Stop the crabs before they reach the pump house. Walking through crabs slows you down.
 
 Colored plates (Chill, Surge, Boom, Patch) fire when you open the valve they landed in, so you choose when to use them.
+
+## Towers and crabs
+
+| Tower | What it's for |
+| --- | --- |
+| Spitter | A cheap all-rounder that fires at one crab |
+| Mortar | Shells that burst across a crowd |
+| Foamer | Slows every crab nearby |
+| Fire hose | A jet that sprays through crowds, weak against heavy crabs |
+| Harpoon | Hunts the biggest crab in range and ignores armor |
+| Eel coil | Lightning that jumps from crab to crab |
+| Net launcher | Pins the toughest crab in place |
+| Signal mast | Makes nearby towers fire faster |
+| Bilge pump | Earns parts over time |
+| Bench | Upgrades your own blaster (one per level) |
+
+| Crab | What it does |
+| --- | --- |
+| Scuttler | The basic crab, in big crowds |
+| Runner | Twice as fast |
+| Flea | Tiny, fast and spread out, so shells waste themselves on it |
+| Hermit | Its shell blocks most damage |
+| Brood | Bursts into seven scuttlers when killed |
+| Molter | Bolts for the gate at half health |
+| Medic | Heals the crabs around it |
+| Bull | Fast and heavy, and foam barely slows it |
+| Jammer | Slows every tower near it |
+| King | A boss that does huge damage if it reaches the gate |
 
 ## Change it
 
@@ -66,7 +95,7 @@ Each level is one line in `src/levels.js`: its name, road, towers and wave rhyth
 
 1. **Economy:** income lets you afford a set share of the level's towers and upgrades, never all of them, so what you buy first matters.
 2. **Waves:** each wave is sized to what you could have bought by the time it arrives, so the last waves stay dangerous after you've built up.
-3. **Calibration:** an expert bot, trying several play styles, finds the strongest version of each level it can survive. The level is then scaled to leave the room that `targetHeadroom()` asks for: about 2× on level 1, down to almost nothing on level 50. Levels 1–20 are also held to `casualFloor()`, so a casual player can reach the harder ones.
+3. **Calibration:** an expert bot, trying many tower combinations and build orders, finds the strongest version of each level it can survive. The level is then scaled to leave the room that `targetHeadroom()` asks for: about 2× on level 1, down to almost nothing on level 50. Levels 1–20 are also held to `casualFloor()`, so a casual player can reach the harder ones.
 
 To make the whole game harder or easier, change `targetHeadroom()` and recalibrate. After changing levels, towers or crabs, run both of these:
 
@@ -78,7 +107,13 @@ npm run calibrate
 npm run balance
 ```
 
-`calibrate` writes `src/level-tuning.js`, and `npm run calibrate -- 12 13` redoes only those levels. `balance` plays every level with three bots and checks each layout for things like a pad sitting in a lane. The idle bot should lose everything, and the expert should always win.
+`calibrate` writes `src/level-tuning.js`, and `npm run calibrate -- 12 13` redoes only those levels. It takes about two minutes on 12 CPU cores. `balance` plays every level with three bots and checks each layout for things like a pad sitting in a lane. The idle bot should lose everything, and the expert should always win.
+
+After changing tower or crab stats, also run this. It compares every tower against every kind of wave, and it shows when one tower has become the only sensible choice or a crab needs a new price:
+
+```bash
+npm run towers
+```
 
 The bots fire special plates as soon as they get them, so a player who times them well can beat the expert. They also never hesitate or misread a level, which a real player will.
 

@@ -57,7 +57,7 @@ function blob(r, sx, sy, sz, x, y, z, detail = 0) {
 }
 
 // Crabs face +z, which is toward the camera as they march south.
-export function crabGeometry({ detail = 0, kneed = false, shell = false, spikes = false, tendrils = false, claw = 1 } = {}) {
+export function crabGeometry({ detail = 0, kneed = false, shell = false, spikes = false, tendrils = false, horns = false, antenna = false, claw = 1 } = {}) {
   const parts = [{ geo: blob(0.5, 1.12, 0.64, 0.88, 0, 0.42, 0, detail) }];
 
   if (shell) {
@@ -72,6 +72,15 @@ export function crabGeometry({ detail = 0, kneed = false, shell = false, spikes 
       const z = Math.cos(a) * 0.2 - 0.08;
       parts.push({ geo: limb([x, 0.66, z], [x * 1.7, 1.26, z * 1.7], 0.075, 0.03, 4), color: 0xc8fff0, tint: 0 });
     }
+  }
+  if (horns) {
+    for (const side of [-1, 1]) {
+      parts.push({ geo: limb([side * 0.3, 0.62, 0.3], [side * 0.62, 0.98, 0.62], 0.13, 0.02, 5), color: 0xe8dcc0, tint: 0 });
+    }
+  }
+  if (antenna) {
+    parts.push({ geo: limb([0, 0.62, -0.1], [0, 1.3, -0.16], 0.045, 0.025, 4), color: 0x2f3b42, tint: 0 });
+    parts.push({ geo: blob(0.13, 1, 1, 1, 0, 1.36, -0.16), color: 0xff4d4d, tint: 0 });
   }
   if (spikes) {
     for (let i = -2; i <= 2; i++) {
@@ -257,6 +266,38 @@ export function buildTower(type, level, accent) {
     put(head, new THREE.CylinderGeometry(0.03, 0.06, 2.3, 6).rotateX(Math.PI / 2), steel, 0, 1.3, 0.55);
     put(head, new THREE.ConeGeometry(0.13, 0.36, 6).rotateX(Math.PI / 2), lambert(0xf2f7f5), 0, 1.3, 1.82);
     muzzle.position.set(0, 1.3, 1.9);
+  } else if (type === 'eel') {
+    put(head, new THREE.CylinderGeometry(0.42, 0.66, 0.5, 8), dark, 0, 0.25, 0);
+    put(head, new THREE.CylinderGeometry(0.15, 0.15, 1.6, 8), steel, 0, 1.2, 0);
+    for (let i = 0; i < 2 + level; i++) {
+      put(head, new THREE.TorusGeometry(0.46 - i * 0.05, 0.075, 6, 14).rotateX(Math.PI / 2), body, 0, 0.72 + i * 0.3, 0);
+    }
+    put(head, new THREE.SphereGeometry(0.2 + level * 0.05, 10, 8), new THREE.MeshBasicMaterial({ color: 0xcfeeff }), 0, 2.1, 0);
+    muzzle.position.set(0, 2.1, 0);
+  } else if (type === 'net') {
+    put(head, new THREE.CylinderGeometry(0.62, 0.76, 0.46, 10), dark, 0, 0.23, 0);
+    const barrel = put(head, new THREE.CylinderGeometry(0.42 + level * 0.04, 0.28, 1.2, 10), body, 0, 0.95, 0.32);
+    barrel.rotation.x = 1.05;
+    put(head, new THREE.TorusGeometry(0.42 + level * 0.04, 0.05, 6, 14).rotateX(Math.PI / 2 + 1.05), steel, 0, 1.25, 0.82);
+    muzzle.position.set(0, 1.25, 0.9);
+  } else if (type === 'mast') {
+    const height = 2.1 + level * 0.3;
+    put(head, new THREE.BoxGeometry(0.8, 0.3, 0.8), dark, 0, 0.15, 0);
+    put(head, new THREE.CylinderGeometry(0.07, 0.16, height, 6), steel, 0, 0.3 + height / 2, 0);
+    for (let i = 1; i <= level; i++) put(head, new THREE.BoxGeometry(0.7, 0.06, 0.06), body, 0, 0.5 + i * 0.5, 0);
+    const spin = new THREE.Group();
+    spin.position.y = 0.3 + height;
+    head.add(spin);
+    put(spin, new THREE.SphereGeometry(0.42, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(1.2), body, 0, 0, 0.1);
+    head.userData.spin = spin;
+    muzzle.position.set(0, 0.3 + height, 0);
+  } else if (type === 'pump') {
+    put(head, new THREE.BoxGeometry(1.1, 0.72, 1.1), body, 0, 0.36, 0);
+    put(head, new THREE.CylinderGeometry(0.16, 0.16, 0.9, 8), steel, 0, 1.05, 0);
+    const piston = put(head, new THREE.CylinderGeometry(0.3 + level * 0.03, 0.3 + level * 0.03, 0.26, 10), dark, 0, 1.02, 0);
+    head.userData.piston = piston;
+    put(head, limb([0.5, 0.4, 0.2], [0.96, 0.14, 0.62], 0.1, 0.1, 6), steel);
+    muzzle.position.set(0, 1.4, 0);
   } else {
     // Blaster bench.
     put(head, new THREE.BoxGeometry(1.5, 0.12, 0.96), lambert(0x8a5a2b), 0, 0.72, 0);
