@@ -347,6 +347,33 @@ function choiceCards(pad) {
   }
 }
 
+const WIDE = matchMedia('(min-aspect-ratio: 5/4)');
+const MENU_GAP = 28;
+
+// On wide screens the menus sit over the sea just beside the yard, rather than at the window's
+// edges, measured against the rows of the yard they actually sit next to.
+function placeBesideYard(el, side) {
+  el.style.left = '';
+  el.style.right = '';
+  if (el.hidden || !WIDE.matches) return;
+  const box = el.getBoundingClientRect();
+  const rows = view.yardSides.filter((s) => s.y >= box.top && s.y <= box.bottom);
+  if (!rows.length) return;
+  if (side === 'right') {
+    const edge = Math.max(...rows.map((s) => s.right));
+    el.style.left = `${Math.round(Math.min(edge + MENU_GAP, innerWidth - box.width - 16))}px`;
+    el.style.right = 'auto';
+  } else {
+    const edge = Math.min(...rows.map((s) => s.left));
+    el.style.left = `${Math.round(Math.max(16, edge - MENU_GAP - box.width))}px`;
+  }
+}
+
+function placeMenus() {
+  placeBesideYard($('pad-panel'), 'right');
+  placeBesideYard($('pad-stats'), 'left');
+}
+
 function updatePadPanel() {
   const panel = $('pad-panel');
   const stats = $('pad-stats');
@@ -371,6 +398,7 @@ function updatePadPanel() {
   stats.hidden = !pad.type;
   if (choosing) choiceCards(pad);
   panel.hidden = !choosing;
+  placeMenus();
 }
 
 function setText(id, value) {
@@ -716,6 +744,7 @@ function bindUi() {
   addEventListener('resize', () => {
     view.resize();
     overlay.resize();
+    placeMenus();
   });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && mode === 'playing') togglePause();

@@ -5,6 +5,8 @@ import { CRABS, SPECIALS, TOWERS, WORLD } from '../content.js';
 import { applyPalette, buildWorld } from './world.js';
 import { buildHero, buildHydrant, buildTower, crabGeometry, crabMaterial, lambert, netGeometry, ringMesh } from './models.js';
 
+// The outside of the guard rails, which run along x = ±9.6 in world.js.
+const YARD_SIDE = 9.8;
 const CRAB_CAPACITY = { scuttler: 1400, runner: 600, hermit: 240, brood: 120, king: 6, medic: 150, molter: 500, flea: 900, bull: 150, jammer: 150 };
 const CRAB_SHAPES = {
   scuttler: { detail: 0 },
@@ -351,6 +353,18 @@ export class View {
       if (fits) break;
     }
     this.camBase.copy(this.camera.position);
+
+    // Where the yard's sides land on screen, top to bottom, so menus can sit beside it over the sea.
+    // Two heights, because the pump house wall stands taller than the deck.
+    this.yardSides = [];
+    for (let z = -2; z <= 24; z += 0.5) {
+      for (const y of [0, 1.4]) {
+        const left = this.project(-YARD_SIDE, y, z);
+        const right = this.project(YARD_SIDE, y, z);
+        this.yardSides.push({ y: right.y, left: left.x, right: right.x });
+      }
+    }
+
     this.scene.fog.near = distance * 1.35;
     this.scene.fog.far = distance * 3.2;
     const u = this.world.water.material.uniforms;
