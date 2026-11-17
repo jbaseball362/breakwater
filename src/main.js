@@ -1,7 +1,7 @@
 // Boot, the game loop, input, menus and the HUD.
 
 import { CRABS, SPECIALS, statLines, TOWERS, WORLD } from './content.js';
-import { ATTRACT, LEVELS, ZONES } from './levels.js';
+import { ATTRACT, DIFFICULTIES, LEVEL_SETS, ZONES } from './levels.js';
 import { choosePad, createGame, sendNextWave, starsFor, stepGame, STEP } from './sim.js';
 import { audio } from './audio.js';
 import { View } from './render/view.js';
@@ -23,12 +23,25 @@ function clearRetiredSaves() {
   }
 }
 
+const DIFFICULTY_KEYS = Object.keys(DIFFICULTIES);
+
+// Bolts are kept per difficulty, keyed by level number.
 function loadSave() {
+  const fresh = () => ({ bolts: { easy: {}, medium: {}, hard: {} }, difficulty: 'medium', muted: false });
   try {
     const raw = JSON.parse(localStorage.getItem(SAVE_KEY));
-    return { stars: raw?.stars ?? {}, muted: !!raw?.muted };
+    const loaded = fresh();
+    if (!raw) return loaded;
+    for (const key of DIFFICULTY_KEYS) Object.assign(loaded.bolts[key], raw.bolts?.[key]);
+    // Before there were difficulties, every bolt was earned on what is now Hard, under `stars`.
+    for (const [id, count] of Object.entries(raw.stars ?? {})) {
+      loaded.bolts.hard[id] = Math.max(count, loaded.bolts.hard[id] ?? 0);
+    }
+    if (DIFFICULTIES[raw.difficulty]) loaded.difficulty = raw.difficulty;
+    loaded.muted = !!raw.muted;
+    return loaded;
   } catch {
-    return { stars: {}, muted: false };
+    return fresh();
   }
 }
 
@@ -37,7 +50,8 @@ const save = loadSave();
 
 function writeSave() {
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+    // `stars` repeats the Hard bolts, so an older copy of the game still running offline keeps them.
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ ...save, stars: save.bolts.hard }));
   } catch {
     // Private windows can refuse storage. The game still plays, it just won't remember.
   }
@@ -55,6 +69,7 @@ function logRun(outcome) {
       at: Date.now(),
       level: level.id,
       name: level.name,
+      difficulty: level.difficulty,
       threat: level.threat,
       outcome,
       hp: Math.ceil(game.hp),
@@ -78,7 +93,10 @@ function logRun(outcome) {
   }
 }
 
-const isUnlocked = (level) => level.id === 1 || (save.stars[level.id - 1] ?? 0) > 0;
+const levels = () => LEVEL_SETS[save.difficulty];
+const boltsOn = (difficulty, id) => save.bolts[difficulty][id] ?? 0;
+// Winning a level at any difficulty opens the next one at all of them.
+const isUnlocked = (l) => l.id === 1 || DIFFICULTY_KEYS.some((key) => boltsOn(key, l.id - 1) > 0);
 
 // ---------- Input ----------
 
@@ -192,6 +210,7 @@ function goTitle() {
 function goLevels() {
   mode = 'levels';
   if (!game || game.def !== ATTRACT) startAttract();
+  renderDifficulty();
   renderLevelList();
   showScreen('screen-levels');
   $('screen-levels').scrollTop = 0;
@@ -209,10 +228,29 @@ function boltsHtml(count) {
   return [0, 1, 2].map((i) => `<span class="bolt${i < count ? ' on' : ''}"></span>`).join('');
 }
 
+function renderDifficulty() {
+  const box = $('difficulty');
+  box.textContent = '';
+  for (const [key, def] of Object.entries(DIFFICULTIES)) {
+    const button = make('button', 'btn difficulty-option', def.name);
+    button.setAttribute('role', 'radio');
+    button.setAttribute('aria-checked', String(key === save.difficulty));
+    button.addEventListener('click', () => {
+      save.difficulty = key;
+      writeSave();
+      renderDifficulty();
+      renderLevelList();
+    });
+    box.append(button);
+  }
+  $('difficulty-note').textContent = `${DIFFICULTIES[save.difficulty].note} Bolts are kept separately for each difficulty.`;
+}
+
 function renderLevelList() {
   const list = $('level-list');
   list.textContent = '';
-  const next = LEVELS.find((l) => !(save.stars[l.id] > 0));
+  // The furthest open level without bolts here, so switching difficulty mid-game doesn't send you back to 1.
+  const next = levels().findLast((l) => isUnlocked(l) && !boltsOn(save.difficulty, l.id));
   let total = 0;
   for (const zone of ZONES) {
     const heading = document.createElement('h3');
@@ -220,8 +258,8 @@ function renderLevelList() {
     heading.textContent = zone.name;
     const grid = document.createElement('div');
     grid.className = 'zone-grid';
-    for (const l of LEVELS.filter((x) => x.zone === zone.key)) {
-      const stars = save.stars[l.id] ?? 0;
+    for (const l of levels().filter((x) => x.zone === zone.key)) {
+      const stars = boltsOn(save.difficulty, l.id);
       total += stars;
       const button = document.createElement('button');
       button.className = `plate level-plate${l === next ? ' current' : ''}`;
@@ -234,7 +272,7 @@ function renderLevelList() {
     }
     list.append(heading, grid);
   }
-  $('bolt-total').innerHTML = `<span class="bolt"></span>${total} of ${LEVELS.length * 3}`;
+  $('bolt-total').innerHTML = `<span class="bolt"></span>${total} of ${levels().length * 3}`;
 }
 
 // ---------- Playing ----------
@@ -352,11 +390,13 @@ function showBanner(text, seconds = 3, alert = false) {
 
 // Bolts here are the player's best for this level so far, not how the current run is going.
 function showLevelTag() {
-  const best = save.stars[level.id] ?? 0;
+  const best = boltsOn(level.difficulty, level.id);
+  const difficulty = DIFFICULTIES[level.difficulty].name;
   $('level-num').textContent = `Level ${level.id}`;
   $('level-name').textContent = level.name;
+  $('level-best-label').textContent = `${difficulty} best`;
   $('level-bolts').innerHTML = boltsHtml(best);
-  $('level-tag').setAttribute('aria-label', `Level ${level.id}, ${level.name}. Best so far: ${best} of 3 bolts`);
+  $('level-tag').setAttribute('aria-label', `Level ${level.id}, ${level.name}, on ${difficulty}. Best so far: ${best} of 3 bolts`);
 }
 
 function startLevel(l) {
@@ -459,10 +499,10 @@ function showResult() {
   mode = 'ended';
   const won = game.phase === 'won';
   const stars = starsFor(game);
-  const nextLevel = LEVELS[level.id];
+  const nextLevel = LEVEL_SETS[level.difficulty][level.id];
   logRun(won ? 'won' : 'lost');
-  if (won && stars > (save.stars[level.id] ?? 0)) {
-    save.stars[level.id] = stars;
+  if (won && stars > boltsOn(level.difficulty, level.id)) {
+    save.bolts[level.difficulty][level.id] = stars;
     writeSave();
     showLevelTag();
   }
@@ -657,7 +697,7 @@ function bindUi() {
   $('btn-quit').addEventListener('click', () => { logRun('quit'); goLevels(); });
   $('btn-retry').addEventListener('click', () => startLevel(level));
   $('btn-result-levels').addEventListener('click', goLevels);
-  $('btn-next').addEventListener('click', () => startLevel(LEVELS[level.id]));
+  $('btn-next').addEventListener('click', () => startLevel(LEVEL_SETS[level.difficulty][level.id]));
   $('btn-send').addEventListener('click', () => sendNextWave(game));
   $('btn-speed').addEventListener('click', () => {
     speed = speed === 1 ? 2 : 1;
@@ -765,7 +805,7 @@ async function boot() {
     get mode() { return mode; },
     view,
     input,
-    startLevel: (id) => startLevel(LEVELS[id - 1]),
+    startLevel: (id, difficulty = save.difficulty) => startLevel(LEVEL_SETS[difficulty][id - 1]),
     frame,
     run(seconds, mx = 0, mz = 0) {
       joy.mx = mx;

@@ -2,11 +2,12 @@
 
 import { parentPort } from 'node:worker_threads';
 import { CRABS, HERO, WORLD } from '../src/content.js';
-import { BLUEPRINTS, buildLevel, casualFloor, LEVELS, targetHeadroom } from '../src/levels.js';
+import { BLUEPRINTS, buildLevel, casualFloor, LEVEL_SETS, LEVELS, targetHeadroom } from '../src/levels.js';
 import { buildLane, starsFor } from '../src/sim.js';
 import { bestExpert, BOTS, expertStyles, hpShare, playLevel, playStyle } from './bots.mjs';
 
 const CALIBRATE_SEEDS = [1, 2];
+const EASIER_SEEDS = [1, 2, 3];
 const REPORT_SEEDS = [1, 2];
 const REFINE_STEPS = 6;
 const MIN_THREAT = 0.05;
@@ -56,16 +57,40 @@ function casualCopes(bp, n, threat) {
   return CALIBRATE_SEEDS.every((seed) => hpShare(playLevel(def, 'casual', seed)) >= casualFloor(n));
 }
 
-function calibrateLevel({ n, startFrom }) {
+// Easy and Medium are shares of the strongest waves the casual and slow bots survive with the
+// level's own towers, so they ease off most where those towers are weak or the walking is long.
+// Medium leaves the casual bot room and the slow bot just enough. Easy leaves both room. The Hard
+// share keeps each one a clear step below Hard on levels the bots already find easy.
+const EASIER = {
+  easy: { casual: 0.55, slow: 0.8, hard: 0.6 },
+  medium: { casual: 0.75, slow: 1, hard: 0.8 },
+};
+
+function easierThreats(bp, n, hard) {
+  const hp = buildLevel(bp, n, hard).hp;
+  const limitFor = (bot) => strongestSurvivable((threat) => EASIER_SEEDS.every((seed) => (
+    hpShare(playLevel(buildLevel(bp, n, threat, hp), bot, seed)) >= 0.5
+  )), hard);
+  const limits = { casual: limitFor('casual'), slow: limitFor('slow'), hard };
+  const pick = (shares) => Math.round(Math.min(...Object.keys(shares).map((k) => limits[k] * shares[k])) * 1000) / 1000;
+  return { casualLimit: limits.casual, slowLimit: limits.slow, easy: pick(EASIER.easy), medium: pick(EASIER.medium) };
+}
+
+// With keepHard, Hard stays as it is and only Easy and Medium are worked out again.
+function calibrateLevel({ n, startFrom, keepHard }) {
   const bp = BLUEPRINTS[n - 1];
-  const survives = makeSurvivalCheck(bp, n);
-  const limit = strongestSurvivable(survives, startFrom);
-  // Waves come in whole crabs, and the early levels also have to suit a casual player.
-  let threat = limit / targetHeadroom(n);
-  while (threat > MIN_THREAT && !(survives(threat) && casualCopes(bp, n, threat))) threat *= 0.96;
-  threat = Math.round(threat * 1000) / 1000;
+  let limit = null;
+  let threat = startFrom;
+  if (!keepHard) {
+    const survives = makeSurvivalCheck(bp, n);
+    limit = strongestSurvivable(survives, startFrom);
+    // Waves come in whole crabs, and the early levels also have to suit a casual player.
+    threat = limit / targetHeadroom(n);
+    while (threat > MIN_THREAT && !(survives(threat) && casualCopes(bp, n, threat))) threat *= 0.96;
+    threat = Math.round(threat * 1000) / 1000;
+  }
   const check = bestExpert(buildLevel(bp, n, threat), 1);
-  return { n, name: bp.name, limit, room: targetHeadroom(n), threat, hp: hpShare(check) };
+  return { n, name: bp.name, limit, room: targetHeadroom(n), threat, hp: hpShare(check), ...easierThreats(bp, n, threat) };
 }
 
 function checkLayout(def) {
@@ -128,6 +153,13 @@ function reportLevel({ n }) {
     const result = summarize(REPORT_SEEDS.map((seed) => playLevel(def, bot, seed)));
     row[bot] = result.text;
     if (bot === 'idle' && result.wins > 0) problems.push('wins without doing anything');
+  }
+
+  // Easy and Medium only promise that a hesitant player can win, so that's what they're checked for.
+  for (const difficulty of ['medium', 'easy']) {
+    const result = summarize(REPORT_SEEDS.map((seed) => playLevel(LEVEL_SETS[difficulty][n - 1], 'slow', seed)));
+    row[difficulty] = result.text;
+    if (result.wins < REPORT_SEEDS.length) problems.push(`the slow bot loses on ${difficulty}`);
   }
 
   const experts = REPORT_SEEDS.map((seed) => bestExpert(def, seed));

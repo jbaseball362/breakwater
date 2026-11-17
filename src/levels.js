@@ -11,6 +11,8 @@
 //      So early waves are fair, and the last ones don't get easy once you've built up.
 //   3. Calibration: tools/calibrate.mjs plays each level with the expert bot to find how much it
 //      can survive, then scales the waves so the level lands on targetHeadroom() below.
+//      That's Hard. Easy and Medium are set from what the casual bot can survive instead, and keep
+//      Hard's pump house, so each level gets easier by however much it needs.
 //
 // To add a level, add a line to BLUEPRINTS and run `npm run calibrate`, then `npm run balance`.
 
@@ -282,7 +284,9 @@ function makeWaveGroups(parsed, budget, toughness) {
   });
 }
 
-export function buildLevel(bp, n, threat = 1) {
+// pumpHp keeps the pump house from another build of the level, so an easier difficulty's smaller
+// waves don't also shrink it.
+export function buildLevel(bp, n, threat = 1, pumpHp) {
   const layout = LAYOUTS[bp.layout];
   const pads = [...bp.towers].map((letter, i) => {
     const [x, z] = layout.slots[i];
@@ -314,7 +318,7 @@ export function buildLevel(bp, n, threat = 1) {
 
   // Big enough that falling a little short on the biggest wave hurts instead of ending the level.
   const worstLeak = Math.max(...waves.map((w) => w.groups.reduce((sum, g) => sum + (g.type === 'king' ? 0 : g.count * CRABS[g.type].leak), 0)));
-  const hp = Math.max(6, Math.round(Math.min(120, 20 + worstLeak * 0.1) * (bp.glass ?? 1)));
+  const hp = pumpHp ?? Math.max(6, Math.round(Math.min(120, 20 + worstLeak * 0.1) * (bp.glass ?? 1)));
   for (const wave of waves) {
     for (const group of wave.groups) if (group.type === 'king') group.leak = Math.ceil(hp * 0.35);
   }
@@ -340,7 +344,32 @@ export function buildLevel(bp, n, threat = 1) {
 
 export { BLUEPRINTS };
 
-export const LEVELS = BLUEPRINTS.map((bp, i) => buildLevel(bp, i + 1, TUNING[i + 1] ?? 1));
+export const DIFFICULTIES = {
+  easy: { name: 'Easy', note: 'Much smaller waves. Good for learning a level.' },
+  medium: { name: 'Medium', note: 'Smaller waves than Hard.' },
+  hard: { name: 'Hard', note: 'Full-size waves, tuned against an expert bot.' },
+};
+
+function buildSet(difficulty, threatFor, hardSet) {
+  return BLUEPRINTS.map((bp, i) => {
+    const def = buildLevel(bp, i + 1, threatFor(i + 1), hardSet?.[i].hp);
+    def.difficulty = difficulty;
+    return def;
+  });
+}
+
+const hardThreat = (n) => TUNING.hard[n] ?? 1;
+const HARD = buildSet('hard', hardThreat);
+
+// The same 50 levels at each difficulty. A level missing its Easy or Medium number plays as Hard.
+export const LEVEL_SETS = {
+  easy: buildSet('easy', (n) => TUNING.easy[n] ?? hardThreat(n), HARD),
+  medium: buildSet('medium', (n) => TUNING.medium[n] ?? hardThreat(n), HARD),
+  hard: HARD,
+};
+
+// Hard, which the balance tools check.
+export const LEVELS = HARD;
 
 const ONE_LANE = LAYOUTS.straight.lanes;
 

@@ -97,7 +97,14 @@ Each level is one line in `src/levels.js`: its name, road, towers and wave rhyth
 2. **Waves:** each wave is sized to what you could have bought by the time it arrives, so the last waves stay dangerous after you've built up.
 3. **Calibration:** an expert bot, trying many tower combinations and build orders, finds the strongest version of each level it can survive. The level is then scaled to leave the room that `targetHeadroom()` asks for: about 2× on level 1, down to almost nothing on level 50. Levels 1–20 are also held to `casualFloor()`, so a casual player can reach the harder ones.
 
-To make the whole game harder or easier, change `targetHeadroom()` and recalibrate. After changing levels, towers or crabs, run both of these:
+That's **Hard**. Players pick a difficulty on the level screen, and the same 50 levels come in two easier versions with smaller waves and Hard's pump house:
+
+- **Medium** leaves the casual bot room to spare, and the slow bot just enough to win.
+- **Easy** leaves both of them room to spare.
+
+Both are worked out from those bots playing each level with its own towers, so a level eases off most where its towers or walking make it hard for them. The shares are `EASIER` in `tools/level-jobs.mjs`. Each also stays a clear step below Hard. Bolts are saved separately for each difficulty, and winning a level at any difficulty opens the next one at all of them.
+
+To make the whole game harder or easier, change `targetHeadroom()` and recalibrate. To move only Easy and Medium, change `EASIER` and run `npm run calibrate -- --keep-hard`. After changing levels, towers or crabs, run both of these:
 
 ```bash
 npm run calibrate
@@ -107,7 +114,7 @@ npm run calibrate
 npm run balance
 ```
 
-`calibrate` writes `src/level-tuning.js`, and `npm run calibrate -- 12 13` redoes only those levels. It takes about two minutes on 12 CPU cores. `balance` plays every level with three bots and checks each layout for things like a pad sitting in a lane. The idle bot should lose everything, and the expert should always win.
+`calibrate` writes `src/level-tuning.js`, and `npm run calibrate -- 12 13` redoes only those levels. It takes about two minutes on 12 CPU cores. `balance` plays every level with four bots and checks each layout for things like a pad sitting in a lane. On Hard, the idle bot should lose everything and the expert should always win. The slow bot should win every level on Medium and Easy.
 
 After changing tower or crab stats, also run this. It compares every tower against every kind of wave, and it shows when one tower has become the only sensible choice or a crab needs a new price:
 
@@ -117,7 +124,7 @@ npm run towers
 
 The bots fire special plates as soon as they get them, so a player who times them well can beat the expert. They also never hesitate or misread a level, which a real player will.
 
-Each attempt is recorded in the browser under `breakwater.log.v2`: level, result, time, crabs leaked and what got built. It's for checking the curve against real play, and it's never sent anywhere. Saves and logs belong to one browser, so playing in Chrome and in the app's browser pane gives you two separate sets.
+Each attempt is recorded in the browser under `breakwater.log.v2`: level, difficulty, result, time, crabs leaked and what got built. It's for checking the curve against real play, and it's never sent anywhere. Saves and logs belong to one browser, so playing in Chrome and in the app's browser pane gives you two separate sets.
 
 ## Offline file list
 

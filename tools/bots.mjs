@@ -1,6 +1,6 @@
 // Bots that play levels headless. They bracket a real player:
-// idle should lose nearly everything, casual stands in for a distracted first attempt with sensible
-// tower picks, and expert never hesitates or walks the wrong way. Expert tries several tower
+// idle should lose nearly everything, slow and casual stand in for a hesitant and a distracted first
+// attempt with sensible tower picks, and expert never hesitates or walks the wrong way. Expert tries several tower
 // combinations and build orders and keeps the best, so the difficulty curve reflects what a player
 // who has worked out a level can do, not one bot's bad habit.
 // None of them time the special plates, so a sharp player can still beat the expert.
@@ -21,6 +21,8 @@ const BUILD_ORDERS = {
 export const BOTS = {
   idle: null,
   casual: { key: 'casual', think: 1.6, walk: 0.7, minTank: 25, order: 'cheapest' },
+  // A hesitant player: slow to react and to walk, and waits for fuller hydrants. Easy is set for it.
+  slow: { key: 'slow', think: 2.5, walk: 0.6, minTank: 40, order: 'cheapest' },
 };
 
 const authoredLoadout = (def) => def.pads.map((p) => p.authored);
